@@ -1,6 +1,6 @@
 <template>
-  <div class="fixed text-center w-full bottom-0 pr-6 mb-4">
-    <span class="w-full bg-base-200 px-4 py-2 rounded-md inline-flex space-x-2 mx-auto items-center justify-between mb-2 z-20 md:hidden">
+  <div class="absolute text-center w-full bottom-0 pr-3 mb-4">
+    <span class="w-full bg-base-200 px-4 py-2 rounded-md inline-flex space-x-2 mx-auto items-center justify-between mb-2 z-20">
       <div class="flex items-center space-x-2">
         <component
           :is="fieldIcons[drawField.type]"
@@ -9,14 +9,14 @@
           class="inline"
           :stroke-width="1.6"
         />
-        <span> Draw {{ fieldNames[drawField.type] }} Field </span>
+        <span>{{ t('draw_field').replace('{field}', fieldNames[drawField.type]) }}</span>
       </div>
       <a
         href="#"
         class="link block text-center"
         @click.prevent="$emit('cancel')"
       >
-        Cancel
+        {{ t('cancel') }}
       </a>
     </span>
     <FieldSubmitter
@@ -24,6 +24,7 @@
       :submitters="submitters"
       :editable="editable"
       :mobile-view="true"
+      :menu-style="{ backgroundColor: ['', null, 'transparent'].includes(backgroundColor) ? 'white' : backgroundColor }"
       @new-submitter="save"
       @remove="removeSubmitter"
       @name-change="save"
@@ -43,7 +44,7 @@ export default {
     Field,
     FieldSubmitter
   },
-  inject: ['save'],
+  inject: ['save', 't', 'backgroundColor'],
   props: {
     drawField: {
       type: Object,

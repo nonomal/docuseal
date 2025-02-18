@@ -5,9 +5,15 @@ class ConsoleRedirectController < ApplicationController
   skip_authorization_check
 
   def index
-    return redirect_to(new_user_session_path({ redir: params[:redir] }.compact)) if current_user.blank?
+    if request.path == '/upgrade'
+      params[:redir] = Docuseal.multitenant? ? "#{Docuseal::CONSOLE_URL}/plans" : "#{Docuseal::CONSOLE_URL}/on_premises"
+    end
 
-    auth = JsonWebToken.encode(uuid: current_user.uuid,
+    params[:redir] = "#{Docuseal::CONSOLE_URL}/manage" if request.path == '/manage'
+
+    return redirect_to(new_user_session_path({ redir: params[:redir] }.compact)) if true_user.blank?
+
+    auth = JsonWebToken.encode(uuid: true_user.uuid,
                                scope: :console,
                                exp: 1.minute.from_now.to_i)
 

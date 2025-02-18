@@ -1,29 +1,50 @@
 <template>
   <label
-    v-if="field.name"
+    v-if="showFieldNames && (field.name || field.title)"
     :for="field.uuid"
-    class="label text-2xl mb-2"
-  >{{ field.name }}
-    <template v-if="!field.required">({{ t('optional') }})</template>
+    dir="auto"
+    class="label text-xl sm:text-2xl py-0 mb-2 sm:mb-3.5"
+    :class="{ 'mb-2': !field.description }"
+  >
+    <MarkdownContent
+      v-if="field.title"
+      :string="field.title"
+    />
+    <template v-else>{{ field.name }}</template>
+    <template v-if="!field.required">
+      <span :class="{ 'hidden sm:inline': (field.title || field.name).length > 20 }">
+        ({{ t('optional') }})
+      </span>
+    </template>
   </label>
   <div
     v-else
     class="py-1"
   />
+  <div
+    v-if="field.description"
+    dir="auto"
+    class="mb-3 px-1"
+  >
+    <MarkdownContent :string="field.description" />
+  </div>
+  <AppearsOn :field="field" />
   <div class="items-center flex">
     <input
       v-if="!isTextArea"
       :id="field.uuid"
       v-model="text"
       :maxlength="cellsMaxLegth"
-      class="base-input !text-2xl w-full !pr-11 -mr-10"
+      dir="auto"
+      class="base-input !text-2xl w-full"
+      :class="{ '!pr-11 -mr-10': !field.validation?.pattern }"
       :required="field.required"
       :pattern="field.validation?.pattern"
-      :oninvalid="field.validation?.message ? `this.setCustomValidity(${JSON.stringify(field.validation.message)})` : ''"
-      :oninput="field.validation?.message ? `this.setCustomValidity('')` : ''"
-      :placeholder="`${t('type_here')}...${field.required ? '' : ` (${t('optional')})`}`"
+      :placeholder="`${t('type_here_')}${field.required ? '' : ` (${t('optional')})`}`"
       type="text"
       :name="`values[${field.uuid}]`"
+      @invalid="field.validation?.message ? $event.target.setCustomValidity(field.validation.message) : ''"
+      @input="field.validation?.message ? $event.target.setCustomValidity('') : ''"
       @focus="$emit('focus')"
     >
     <textarea
@@ -31,15 +52,16 @@
       :id="field.uuid"
       ref="textarea"
       v-model="text"
+      dir="auto"
       class="base-textarea !text-2xl w-full"
-      :placeholder="`${t('type_here')}...${field.required ? '' : ` (${t('optional')})`}`"
+      :placeholder="`${t('type_here_')}${field.required ? '' : ` (${t('optional')})`}`"
       :required="field.required"
       :name="`values[${field.uuid}]`"
       @input="resizeTextarea"
       @focus="$emit('focus')"
     />
     <div
-      v-if="!isTextArea && field.type !== 'cells'"
+      v-if="!isTextArea && field.type !== 'cells' && !field.validation?.pattern"
       class="tooltip"
       :data-tip="t('toggle_multiline_text')"
     >
@@ -56,17 +78,26 @@
 
 <script>
 import { IconAlignBoxLeftTop } from '@tabler/icons-vue'
+import AppearsOn from './appears_on'
+import MarkdownContent from './markdown_content'
 
 export default {
   name: 'TextStep',
   components: {
-    IconAlignBoxLeftTop
+    IconAlignBoxLeftTop,
+    MarkdownContent,
+    AppearsOn
   },
   inject: ['t'],
   props: {
     field: {
       type: Object,
       required: true
+    },
+    showFieldNames: {
+      type: Boolean,
+      required: false,
+      default: true
     },
     modelValue: {
       type: String,
@@ -86,7 +117,9 @@ export default {
         const area = this.field.areas?.[0]
 
         if (area) {
-          return parseInt(area.w / area.cell_w) + 1
+          const num = area.w / area.cell_w
+
+          return (num % 1) > 0.2 ? parseInt(num) + 1 : parseInt(num)
         } else {
           return null
         }
@@ -104,12 +137,14 @@ export default {
     }
   },
   mounted () {
-    this.isTextArea = this.modelValue?.includes('\n')
+    if (this.modelValue) {
+      this.isTextArea = this.modelValue.toString().includes('\n')
 
-    if (this.isTextArea) {
-      this.$nextTick(() => {
-        this.resizeTextarea()
-      })
+      if (this.isTextArea) {
+        this.$nextTick(() => {
+          this.resizeTextarea()
+        })
+      }
     }
   },
   methods: {
@@ -117,7 +152,7 @@ export default {
       const textarea = this.$refs.textarea
 
       textarea.style.height = 'auto'
-      textarea.style.height = textarea.scrollHeight + 'px'
+      textarea.style.height = Math.min(250, textarea.scrollHeight) + 'px'
     },
     toggleTextArea () {
       this.isTextArea = true

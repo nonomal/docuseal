@@ -4,16 +4,24 @@
       v-for="(image, index) in sortedPreviewImages"
       :key="image.id"
       :ref="setPageRefs"
+      :input-mode="inputMode"
       :number="index"
       :editable="editable"
+      :data-page="index"
       :areas="areasIndex[index]"
+      :allow-draw="allowDraw"
       :is-drag="isDrag"
+      :with-field-placeholder="withFieldPlaceholder"
       :default-fields="defaultFields"
+      :default-submitters="defaultSubmitters"
       :draw-field="drawField"
+      :draw-field-type="drawFieldType"
       :selected-submitter="selectedSubmitter"
+      :total-pages="sortedPreviewImages.length"
       :image="image"
       @drop-field="$emit('drop-field', {...$event, attachment_uuid: document.uuid })"
       @remove-area="$emit('remove-area', $event)"
+      @scroll-to="scrollToArea"
       @draw="$emit('draw', {...$event, attachment_uuid: document.uuid })"
     />
   </div>
@@ -31,6 +39,11 @@ export default {
       type: Object,
       required: true
     },
+    inputMode: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
     areasIndex: {
       type: Object,
       required: false,
@@ -40,6 +53,26 @@ export default {
       type: Array,
       required: false,
       default: () => []
+    },
+    withFieldPlaceholder: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
+    drawFieldType: {
+      type: String,
+      required: false,
+      default: ''
+    },
+    defaultSubmitters: {
+      type: Array,
+      required: false,
+      default: () => []
+    },
+    allowDraw: {
+      type: Boolean,
+      required: false,
+      default: true
     },
     selectedSubmitter: {
       type: Object,
@@ -90,7 +123,7 @@ export default {
         return this.previewImagesIndex[i] || {
           metadata: lazyloadMetadata,
           id: Math.random().toString(),
-          url: this.basePreviewUrl + `/preview/${this.document.uuid}/${i}.jpg`
+          url: this.basePreviewUrl + `/preview/${this.document.signed_uuid || this.document.uuid}/${i}.jpg`
         }
       })
     },
@@ -107,7 +140,9 @@ export default {
   },
   methods: {
     scrollToArea (area) {
-      this.pageRefs[area.page].areaRefs.find((e) => e.area === area).$el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      this.$nextTick(() => {
+        this.pageRefs[area.page].areaRefs.find((e) => e.area === area).$el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
     },
     setPageRefs (el) {
       if (el) {

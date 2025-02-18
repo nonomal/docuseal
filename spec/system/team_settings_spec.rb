@@ -4,6 +4,7 @@ require 'rails_helper'
 
 RSpec.describe 'Team Settings' do
   let(:account) { create(:account) }
+  let(:second_account) { create(:account) }
   let(:current_user) { create(:user, account:) }
 
   before do
@@ -18,13 +19,19 @@ RSpec.describe 'Team Settings' do
       visit settings_users_path
     end
 
-    it 'shows all users' do
+    it 'shows only active users' do
       within '.table' do
         users.each do |user|
           expect(page).to have_content(user.full_name)
           expect(page).to have_content(user.email)
-          expect(page).not_to have_content(other_user.email)
+          expect(page).to have_link('Edit', href: edit_user_path(user))
         end
+
+        expect(page).to have_button('Remove')
+        expect(page).to have_no_button('Unarchive')
+
+        expect(page).to have_no_content(other_user.full_name)
+        expect(page).to have_no_content(other_user.email)
       end
     end
 
@@ -50,6 +57,43 @@ RSpec.describe 'Team Settings' do
       end
     end
 
+    it "doesn't create a new user if a user already exists" do
+      click_link 'New User'
+
+      within '#modal' do
+        fill_in 'First name', with: 'Michael'
+        fill_in 'Last name', with: 'Jordan'
+        fill_in 'Email', with: users.first.email
+        fill_in 'Password', with: 'password'
+
+        expect do
+          click_button 'Submit'
+        end.not_to change(User, :count)
+      end
+
+      expect(page).to have_content('Email already exists')
+    end
+
+    it "doesn't create a new user if a user belongs to another account" do
+      user = create(:user, account: second_account)
+      visit settings_users_path
+
+      click_link 'New User'
+
+      within '#modal' do
+        fill_in 'First name', with: 'Michael'
+        fill_in 'Last name', with: 'Jordan'
+        fill_in 'Email', with: user.email
+        fill_in 'Password', with: 'password'
+
+        expect do
+          click_button 'Submit'
+        end.not_to change(User, :count)
+
+        expect(page).to have_content('Email has already been taken')
+      end
+    end
+
     it 'updates a user' do
       first(:link, 'Edit').click
 
@@ -72,7 +116,7 @@ RSpec.describe 'Team Settings' do
     it 'removes a user' do
       expect do
         accept_confirm('Are you sure?') do
-          first(:button, 'Delete').click
+          first(:button, 'Remove').click
         end
       end.to change { User.active.count }.by(-1)
 
@@ -86,7 +130,61 @@ RSpec.describe 'Team Settings' do
     end
 
     it 'does not allow to remove the current user' do
-      expect(page).not_to have_content('User has been removed')
+      expect(page).to have_no_content('User has been removed')
+    end
+  end
+
+  context 'when some users are archived' do
+    let!(:users) { create_list(:user, 2, account:) }
+    let!(:archived_users) { create_list(:user, 2, account:, archived_at: Time.current) }
+    let!(:other_user) { create(:user) }
+
+    it 'shows only active users' do
+      visit settings_users_path
+
+      within '.table' do
+        users.each do |user|
+          expect(page).to have_content(user.full_name)
+          expect(page).to have_content(user.email)
+        end
+
+        archived_users.each do |user|
+          expect(page).to have_no_content(user.full_name)
+          expect(page).to have_no_content(user.email)
+        end
+
+        expect(page).to have_no_content(other_user.full_name)
+        expect(page).to have_no_content(other_user.email)
+      end
+
+      expect(page).to have_link('View Archived', href: settings_archived_users_path)
+    end
+
+    it 'shows only archived users' do
+      visit settings_archived_users_path
+
+      within '.table' do
+        archived_users.each do |user|
+          expect(page).to have_content(user.full_name)
+          expect(page).to have_content(user.email)
+          expect(page).to have_no_link('Edit', href: edit_user_path(user))
+        end
+
+        users.each do |user|
+          expect(page).to have_no_content(user.full_name)
+          expect(page).to have_no_content(user.email)
+          expect(page).to have_no_link('Edit', href: edit_user_path(user))
+        end
+
+        expect(page).to have_button('Unarchive')
+        expect(page).to have_no_button('Remove')
+
+        expect(page).to have_no_content(other_user.full_name)
+        expect(page).to have_no_content(other_user.email)
+      end
+
+      expect(page).to have_content('Archived Users')
+      expect(page).to have_link('View Active', href: settings_users_path)
     end
   end
 end

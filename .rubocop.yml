@@ -10,7 +10,8 @@ AllCops:
     - node_modules/**/*
     - bin/*
     - vendor/**/*
-  TargetRubyVersion: '3.2'
+  TargetRubyVersion: '3.3'
+  SuggestExtensions: false
 
 Metrics/BlockLength:
   Exclude:
@@ -30,9 +31,10 @@ Metrics/ParameterLists:
   Max: 10
 
 Metrics/MethodLength:
-  Max: 25
+  Max: 30
   Exclude:
     - 'db/migrate/**'
+    - 'spec/**/*'
 
 Metrics/CyclomaticComplexity:
   Max: 15
@@ -44,25 +46,30 @@ Layout/LineLength:
   AllowedPatterns: ['\A\s*#']
 
 Metrics/AbcSize:
-  Max: 35
+  Max: 45
+  Exclude:
+    - spec/**/*
 
 Metrics/ModuleLength:
-  Max: 500
+  Max: 1000
 
 Metrics/ClassLength:
-  Max: 500
+  Max: 1000
 
 RSpec/NestedGroups:
   Max: 6
 
 RSpec/MultipleExpectations:
-  Max: 20
+  Max: 25
 
 RSpec/ExampleLength:
-  Max: 40
+  Max: 50
 
 RSpec/MultipleMemoizedHelpers:
-  Max: 6
+  Max: 9
+
+Metrics/BlockNesting:
+  Max: 5
 
 Rails/I18nLocaleTexts:
   Enabled: false
@@ -76,5 +83,5 @@ Rails/SkipsModelValidations:
 Rails/ApplicationController:
   Enabled: false
 
-Capybara/ClickLinkOrButtonStyle:
+Rails/Output:
   Enabled: false

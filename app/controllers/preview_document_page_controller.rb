@@ -6,11 +6,14 @@ class PreviewDocumentPageController < ActionController::API
   FORMAT = Templates::ProcessDocument::FORMAT
 
   def show
-    attachment = ActiveStorage::Attachment.find_by(uuid: params[:attachment_uuid])
+    attachment_uuid = ApplicationRecord.signed_id_verifier.verified(params[:signed_uuid], purpose: :attachment)
+
+    attachment = ActiveStorage::Attachment.find_by(uuid: attachment_uuid) if attachment_uuid
 
     return head :not_found unless attachment
 
-    preview_image = attachment.preview_images.joins(:blob).find_by(blob: { filename: "#{params[:id]}#{FORMAT}" })
+    preview_image = attachment.preview_images.joins(:blob)
+                              .find_by(blob: { filename: ["#{params[:id]}.png", "#{params[:id]}.jpg"] })
 
     return redirect_to preview_image.url, allow_other_host: true if preview_image
 
@@ -21,9 +24,10 @@ class PreviewDocumentPageController < ActionController::API
         find_or_create_document_tempfile_path(attachment)
       end
 
-    io = Templates::ProcessDocument.generate_pdf_preview_from_file(attachment, file_path, params[:id].to_i)
+    preview_image =
+      Templates::ProcessDocument.generate_pdf_preview_from_file(attachment, file_path, params[:id].to_i)
 
-    render plain: io.tap(&:rewind).read, content_type: 'image/jpeg'
+    redirect_to preview_image.url, allow_other_host: true
   end
 
   def find_or_create_document_tempfile_path(attachment)

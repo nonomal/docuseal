@@ -5,10 +5,12 @@
   >
     <span
       ref="contenteditable"
+      dir="auto"
       :contenteditable="editable"
       style="min-width: 2px"
       :class="iconInline ? 'inline' : 'block'"
       class="peer outline-none focus:block"
+      @paste.prevent="onPaste"
       @keydown.enter.prevent="blurContenteditable"
       @focus="$emit('focus', $event)"
       @blur="onBlur"
@@ -26,7 +28,7 @@
     <IconPencil
       class="cursor-pointer flex-none opacity-0 group-hover/contenteditable-container:opacity-100 group-hover/contenteditable:opacity-100 align-middle peer-focus:hidden"
       :style="iconInline ? {} : { right: -(1.1 * iconWidth) + 'px' }"
-      title="Edit"
+      :title="t('edit')"
       :class="{ invisible: !editable, 'ml-1': !withRequired, 'absolute': !iconInline, 'inline align-bottom': iconInline }"
       :width="iconWidth"
       :stroke-width="iconStrokeWidth"
@@ -43,6 +45,7 @@ export default {
   components: {
     IconPencil
   },
+  inject: ['t'],
   props: {
     modelValue: {
       type: String,
@@ -95,6 +98,17 @@ export default {
     }
   },
   methods: {
+    onPaste (e) {
+      const text = (e.clipboardData || window.clipboardData).getData('text/plain')
+
+      const selection = this.$el.getRootNode().getSelection()
+
+      if (selection.rangeCount) {
+        selection.deleteFromDocument()
+        selection.getRangeAt(0).insertNode(document.createTextNode(text))
+        selection.collapseToEnd()
+      }
+    },
     selectContent () {
       const el = this.$refs.contenteditable
 

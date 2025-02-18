@@ -2,6 +2,27 @@
 
 Devise.otp_allowed_drift = 60.seconds
 
+class FailureApp < Devise::FailureApp
+  def respond
+    Rollbar.warning('Invalid password') if defined?(Rollbar) && warden_message == :invalid
+
+    super
+  end
+end
+
+module Devise
+  module Mailers
+    module Helpers
+      def devise_mail(record, action, opts = {}, &)
+        assign_message_metadata(action, record)
+
+        initialize_from_record(record)
+        mail(headers_for(action, opts), &)
+      end
+    end
+  end
+end
+
 # Assuming you have not yet modified this file, each configuration option below
 # is set to its default value. Note that some are commented out while others
 # are not: uncommented lines are intended to protect your configuration from
@@ -113,7 +134,7 @@ Devise.setup do |config|
   # This can reduce the time taken to boot the app but if your application
   # requires the Devise mappings to be loaded during boot time the application
   # won't boot properly.
-  # config.reload_routes = true
+  config.reload_routes = false
 
   # ==> Configuration for :database_authenticatable
   # For bcrypt, this is the cost for hashing the password and defaults to 12. If
@@ -277,6 +298,7 @@ Devise.setup do |config|
   config.warden do |manager|
     # manager.intercept_401 = false
     # manager.default_strategies(scope: :user).unshift(:auth_token)
+    manager.failure_app = FailureApp
   end
 
   # ==> Mountable engine configurations

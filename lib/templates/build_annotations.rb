@@ -5,11 +5,11 @@ module Templates
     module_function
 
     def call(data)
-      pdf = PDF::Reader.new(StringIO.new(data))
+      pdf = HexaPDF::Document.new(io: StringIO.new(data))
 
       pdf.pages.flat_map.with_index do |page, index|
-        annotations = page.objects.deref!(page.attributes[:Annots]) || []
-        annotations.filter_map do |annot|
+        (page[:Annots] || []).filter_map do |annot|
+          next if annot.blank?
           next if annot[:A].blank? || annot[:A][:URI].blank?
           next unless annot[:Subtype] == :Link
           next if !annot[:A][:URI].starts_with?('https://') && !annot[:A][:URI].starts_with?('http://')
@@ -29,10 +29,10 @@ module Templates
       {
         'type' => 'external_link',
         'value' => annot[:A][:URI],
-        'x' => left / page.width,
-        'y' => (page.height - top) / page.height,
-        'w' => (right - left) / page.width,
-        'h' => (top - bottom) / page.height
+        'x' => left / page.box.width.to_f,
+        'y' => (page.box.height - top) / page.box.height.to_f,
+        'w' => (right - left) / page.box.width.to_f,
+        'h' => (top - bottom) / page.box.height.to_f
       }
     end
   end

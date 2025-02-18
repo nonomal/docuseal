@@ -6,30 +6,46 @@ class StartFormController < ApplicationController
   skip_before_action :authenticate_user!
   skip_authorization_check
 
+  around_action :with_browser_locale, only: %i[show completed]
+  before_action :maybe_redirect_com, only: %i[show completed]
   before_action :load_template
 
   def show
-    @submitter = @template.submissions.new.submitters.new(uuid: @template.submitters.first['uuid'])
+    @submitter = @template.submissions.new(account_id: @template.account_id)
+                          .submitters.new(uuid: (filter_undefined_submitters(@template).first ||
+                                                 @template.submitters.first)['uuid'])
   end
 
   def update
-    @submitter = Submitter.where(submission: @template.submissions.where(archived_at: nil))
-                          .order(id: :desc)
-                          .then { |rel| params[:resubmit].present? ? rel.where(completed_at: nil) : rel }
-                          .find_or_initialize_by(**submitter_params.compact_blank)
+    return redirect_to start_form_path(@template.slug) if @template.archived_at?
+
+    @submitter = find_or_initialize_submitter(@template, submitter_params)
 
     if @submitter.completed_at?
       redirect_to start_form_completed_path(@template.slug, email: submitter_params[:email])
     else
-      if @template.submitters.to_a.size > 1 && @submitter.new_record?
-        @error_message = 'Not found'
+      if filter_undefined_submitters(@template).size > 1 && @submitter.new_record?
+        @error_message = I18n.t('not_found')
 
         return render :show
       end
 
-      assign_submission_attributes(@submitter, @template) if @submitter.new_record?
+      if (is_new_record = @submitter.new_record?)
+        assign_submission_attributes(@submitter, @template)
+
+        Submissions::AssignDefinedSubmitters.call(@submitter.submission)
+      else
+        @submitter.assign_attributes(ip: request.remote_ip, ua: request.user_agent)
+      end
 
       if @submitter.save
+        if is_new_record
+          WebhookUrls.for_account_id(@submitter.account_id, 'submission.created').each do |webhook_url|
+            SendSubmissionCreatedWebhookRequestJob.perform_async('submission_id' => @submitter.submission_id,
+                                                                 'webhook_url_id' => webhook_url.id)
+          end
+        end
+
         redirect_to submit_form_path(@submitter.slug)
       else
         render :show
@@ -45,18 +61,28 @@ class StartFormController < ApplicationController
 
   private
 
+  def find_or_initialize_submitter(template, submitter_params)
+    Submitter.where(submission: template.submissions.where(expire_at: Time.current..)
+                                        .or(template.submissions.where(expire_at: nil)).where(archived_at: nil))
+             .order(id: :desc)
+             .where(declined_at: nil)
+             .where(external_id: nil)
+             .where(ip: [nil, request.remote_ip])
+             .then { |rel| params[:resubmit].present? ? rel.where(completed_at: nil) : rel }
+             .find_or_initialize_by(email: submitter_params[:email], **submitter_params.compact_blank)
+  end
+
   def assign_submission_attributes(submitter, template)
     resubmit_submitter =
-      if params[:resubmit].present?
-        Submitter.where(submission: @template.submissions).find_by(slug: params[:resubmit])
-      end
+      (Submitter.where(submission: template.submissions).find_by(slug: params[:resubmit]) if params[:resubmit].present?)
 
     submitter.assign_attributes(
-      uuid: template.submitters.first['uuid'],
+      uuid: (filter_undefined_submitters(template).first || @template.submitters.first)['uuid'],
       ip: request.remote_ip,
       ua: request.user_agent,
       values: resubmit_submitter&.preferences&.fetch('default_values', nil) || {},
-      preferences: resubmit_submitter&.preferences.presence || { 'send_email' => true }
+      preferences: resubmit_submitter&.preferences.presence || { 'send_email' => true },
+      metadata: resubmit_submitter&.metadata.presence || {}
     )
 
     if submitter.values.present?
@@ -66,10 +92,18 @@ class StartFormController < ApplicationController
     end
 
     submitter.submission ||= Submission.new(template:,
+                                            account_id: template.account_id,
                                             template_submitters: template.submitters,
+                                            submitters: [submitter],
                                             source: :link)
 
+    submitter.account_id = submitter.submission.account_id
+
     submitter
+  end
+
+  def filter_undefined_submitters(template)
+    Templates.filter_undefined_submitters(template)
   end
 
   def submitter_params

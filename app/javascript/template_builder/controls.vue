@@ -8,8 +8,8 @@
     />
     <ReplaceButton
       v-if="withReplaceButton"
-      :is-direct-upload="isDirectUpload"
       :template-id="template.id"
+      :accept-file-types="acceptFileTypes"
       @click.stop
       @success="$emit('replace', { replaceSchemaItem: item, ...$event })"
     />
@@ -63,10 +63,10 @@ export default {
       type: Object,
       required: true
     },
-    isDirectUpload: {
-      type: Boolean,
-      required: true,
-      default: false
+    acceptFileTypes: {
+      type: String,
+      required: false,
+      default: 'image/*, application/pdf'
     },
     withReplaceButton: {
       type: Boolean,
@@ -80,11 +80,6 @@ export default {
     }
   },
   emits: ['change', 'remove', 'up', 'down', 'replace'],
-  mounted () {
-    if (this.isDirectUpload) {
-      import('@rails/activestorage')
-    }
-  },
   methods: {
     upload: Upload.methods.upload,
     onUpdateName (value) {

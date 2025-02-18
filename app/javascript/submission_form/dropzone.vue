@@ -1,5 +1,6 @@
 <template>
   <div
+    id="dropzone"
     class="flex h-32 w-full"
     @dragover.prevent
     @drop.prevent="onDropFiles"
@@ -65,15 +66,15 @@ export default {
       type: String,
       required: true
     },
+    dryRun: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
     accept: {
       type: String,
       required: false,
       default: '*/*'
-    },
-    isDirectUpload: {
-      type: Boolean,
-      required: true,
-      default: false
     },
     multiple: {
       type: Boolean,
@@ -92,11 +93,6 @@ export default {
       return 'el' + Math.random().toString(32).split('.')[1]
     }
   },
-  mounted () {
-    if (this.isDirectUpload) {
-      import('@rails/activestorage')
-    }
-  },
   methods: {
     onDropFiles (e) {
       this.uploadFiles(e.dataTransfer.files)
@@ -113,55 +109,28 @@ export default {
     async uploadFiles (files) {
       this.isLoading = true
 
-      if (this.isDirectUpload) {
-        const { DirectUpload } = await import('@rails/activestorage')
+      return await Promise.all(
+        Array.from(files).map(async (file) => {
+          const formData = new FormData()
 
-        const blobs = await Promise.all(
-          Array.from(files).map(async (file) => {
-            const upload = new DirectUpload(
-              file,
-              '/direct_uploads',
-              this.$refs.input
-            )
+          if (this.dryRun) {
+            return new Promise((resolve) => {
+              const reader = new FileReader()
 
-            return new Promise((resolve, reject) => {
-              upload.create((error, blob) => {
-                if (error) {
-                  console.error(error)
+              reader.readAsDataURL(file)
 
-                  return reject(error)
-                } else {
-                  return resolve(blob)
-                }
-              })
-            }).catch((error) => {
-              console.error(error)
+              reader.onloadend = () => {
+                resolve({
+                  url: reader.result,
+                  uuid: Math.random().toString(),
+                  filename: file.name
+                })
+              }
             })
-          })
-        )
-
-        return await Promise.all(
-          blobs.map((blob) => {
-            return fetch(this.baseUrl + '/api/attachments', {
-              method: 'POST',
-              body: JSON.stringify({
-                name: 'attachments',
-                blob_signed_id: blob.signed_id,
-                submitter_slug: this.submitterSlug
-              }),
-              headers: { 'Content-Type': 'application/json' }
-            }).then(resp => resp.json()).then((data) => {
-              return data
-            })
-          })).then((result) => {
-          this.$emit('upload', result)
-        }).finally(() => {
-          this.isLoading = false
-        })
-      } else {
-        return await Promise.all(
-          Array.from(files).map((file) => {
-            const formData = new FormData()
+          } else {
+            if (file.type === 'image/bmp' || file.type === 'image/vnd.microsoft.icon') {
+              file = await this.convertBmpToPng(file)
+            }
 
             formData.append('file', file)
             formData.append('submitter_slug', this.submitterSlug)
@@ -173,12 +142,38 @@ export default {
             }).then(resp => resp.json()).then((data) => {
               return data
             })
-          })).then((result) => {
-          this.$emit('upload', result)
-        }).finally(() => {
-          this.isLoading = false
-        })
-      }
+          }
+        })).then((result) => {
+        this.$emit('upload', result)
+      }).finally(() => {
+        this.isLoading = false
+      })
+    },
+    convertBmpToPng (bmpFile) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+
+        reader.onload = function (event) {
+          const img = new Image()
+
+          img.onload = function () {
+            const canvas = document.createElement('canvas')
+            const ctx = canvas.getContext('2d')
+
+            canvas.width = img.width
+            canvas.height = img.height
+            ctx.drawImage(img, 0, 0)
+            canvas.toBlob(function (blob) {
+              const newFile = new File([blob], bmpFile.name.replace(/\.\w+$/, '.png'), { type: 'image/png' })
+              resolve(newFile)
+            }, 'image/png')
+          }
+
+          img.src = event.target.result
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(bmpFile)
+      })
     }
   }
 }

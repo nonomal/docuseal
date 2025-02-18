@@ -1,8 +1,8 @@
-const { globalMutableWebpackConfig, merge } = require('shakapacker')
+const { generateWebpackConfig, merge } = require('shakapacker')
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin
 const { VueLoaderPlugin } = require('vue-loader')
 
-const configs = merge(globalMutableWebpackConfig, {
+const configs = generateWebpackConfig({
   resolve: {
     extensions: ['.css', '.scss', '.vue']
   },
@@ -11,12 +11,20 @@ const configs = merge(globalMutableWebpackConfig, {
   },
   optimization: {
     runtimeChunk: false,
+    concatenateModules: !process.env.BUNDLE_ANALYZE,
     splitChunks: {
+      chunks (chunk) {
+        return chunk.name !== 'rollbar'
+      },
       cacheGroups: {
         default: false,
         applicationVendors: {
           test: /\/node_modules\//,
           chunks: chunk => chunk.name === 'application'
+        },
+        drawVendors: {
+          test: /\/node_modules\//,
+          chunks: chunk => chunk.name === 'draw'
         },
         formVendors: {
           test: /\/node_modules\//,

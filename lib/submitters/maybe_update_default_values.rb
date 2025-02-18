@@ -36,9 +36,9 @@ module Submitters
         user.first_name
       elsif field_name == 'last name'
         user.last_name
-      elsif field['type'] == 'signature' && (signature = UserConfigs.load_signature(user))
+      elsif field['type'] == 'initials' && (initials = UserConfigs.load_initials(user))
         attachment = ActiveStorage::Attachment.find_or_create_by!(
-          blob_id: signature.blob_id,
+          blob_id: initials.blob_id,
           name: 'attachments',
           record: submitter
         )
