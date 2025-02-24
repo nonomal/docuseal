@@ -21,7 +21,7 @@ module Submissions
     def rows_to_xlsx(rows)
       workbook = RubyXL::Workbook.new
       worksheet = workbook[0]
-      worksheet.sheet_name = I18n.l(Time.current.to_date)
+      worksheet.sheet_name = Time.current.to_date.to_s
 
       headers = build_headers(rows)
       headers.each_with_index do |column_name, column_index|
@@ -79,8 +79,8 @@ module Submissions
 
           submission_data += submitter.documents.map.with_index(1) do |attachment, index|
             {
-              name: "Document #{index}",
-              value: attachment.url
+              name: "#{I18n.t('document')} #{index}",
+              value: ActiveStorage::Blob.proxy_url(attachment.blob)
             }
           end
         end
@@ -92,20 +92,28 @@ module Submissions
     def build_submission_data(submitter, submitter_name, submitters_count)
       [
         {
-          name: column_name('Name', submitter_name, submitters_count),
+          name: column_name(I18n.t('name'), submitter_name, submitters_count),
           value: submitter.name
         },
         {
-          name: column_name('Email', submitter_name, submitters_count),
+          name: column_name(I18n.t('email'), submitter_name, submitters_count),
           value: submitter.email
         },
         {
-          name: column_name('Phone', submitter_name, submitters_count),
+          name: column_name(I18n.t('phone'), submitter_name, submitters_count),
           value: submitter.phone
         },
         {
-          name: column_name('Completed At', submitter_name, submitters_count),
-          value: submitter.completed_at
+          name: column_name(I18n.t('status'), submitter_name, submitters_count),
+          value: submitter.status
+        },
+        {
+          name: column_name(I18n.t('completed_at'), submitter_name, submitters_count),
+          value: submitter.completed_at.to_s
+        },
+        {
+          name: column_name(I18n.t('link'), submitter_name, submitters_count),
+          value: submitter.completed_at? ? nil : r.submit_form_url(slug: submitter.slug, **Docuseal.default_url_options)
         }
       ].reject { |e| e[:value].blank? }
     end
@@ -127,19 +135,28 @@ module Submissions
         template_field_type = template_field['type']
         template_field_counters[template_field_type] += 1
         template_field_name = template_field['name'].presence
-        template_field_name ||= "#{template_field_type.titleize} Field #{template_field_counters[template_field_type]}"
+        template_field_name ||=
+          "#{I18n.t("#{template_field_type}_field")} #{template_field_counters[template_field_type]}"
 
         value =
           if template_field_type.in?(%w[image signature])
-            attachments_index[submitter_value]&.url
+            attachment = attachments_index[submitter_value]
+            ActiveStorage::Blob.proxy_url(attachment.blob) if attachment
           elsif template_field_type == 'file'
-            Array.wrap(submitter_value).compact_blank.filter_map { |e| attachments_index[e]&.url }
+            Array.wrap(submitter_value).compact_blank.filter_map do |e|
+              attachment = attachments_index[e]
+              ActiveStorage::Blob.proxy_url(attachment.blob) if attachment
+            end
           else
             submitter_value
           end
 
         { name: template_field_name, uuid: template_field['uuid'], value: }
       end
+    end
+
+    def r
+      Rails.application.routes.url_helpers
     end
   end
 end

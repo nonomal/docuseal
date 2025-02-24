@@ -2,12 +2,15 @@
 
 source 'https://rubygems.org'
 
-ruby '3.2.2'
+ruby '3.4.1'
 
+gem 'arabic-letter-connector', require: 'arabic-letter-connector/logic'
 gem 'aws-sdk-s3', require: false
+gem 'aws-sdk-secretsmanager', require: false
 gem 'azure-storage-blob', require: false
 gem 'bootsnap', require: false
 gem 'cancancan'
+gem 'csv'
 gem 'devise'
 gem 'devise-two-factor'
 gem 'dotenv', require: false
@@ -22,24 +25,24 @@ gem 'lograge'
 gem 'mysql2', require: false
 gem 'oj'
 gem 'pagy'
-gem 'pdf-reader'
 gem 'pg', require: false
 gem 'premailer-rails'
-gem 'puma'
+gem 'pretender'
+gem 'puma', require: false
 gem 'rack'
 gem 'rails'
 gem 'rails_autolink'
 gem 'rails-i18n'
-gem 'rollbar', require: ENV.key?('ROLLBAR_ACCESS_TOKEN')
 gem 'rotp'
 gem 'rqrcode'
 gem 'ruby-vips'
 gem 'rubyXL'
 gem 'shakapacker'
-gem 'sidekiq', require: ENV.key?('REDIS_URL')
+gem 'sidekiq'
 gem 'sqlite3', require: false
 gem 'strip_attributes'
 gem 'turbo-rails'
+gem 'twitter_cldr', require: false
 gem 'tzinfo-data'
 
 group :development, :test do

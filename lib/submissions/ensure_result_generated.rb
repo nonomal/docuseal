@@ -11,6 +11,7 @@ module Submissions
     module_function
 
     def call(submitter)
+      return [] unless submitter
       return submitter.documents if ApplicationRecord.uncached { submitter.document_generation_events.complete.exists? }
 
       events =
@@ -23,15 +24,20 @@ module Submissions
       else
         submitter.document_generation_events.create!(event_name: events.present? ? :retry : :start)
 
-        GenerateResultAttachments.call(submitter)
+        documents = GenerateResultAttachments.call(submitter)
 
         submitter.document_generation_events.create!(event_name: :complete)
+
+        documents
       end
     rescue ActiveRecord::RecordNotUnique
       sleep WAIT_FOR_RETRY
 
       retry
-    rescue StandardError
+    rescue StandardError => e
+      Rollbar.error(e) if defined?(Rollbar)
+      Rails.logger.error(e)
+
       submitter.document_generation_events.create!(event_name: :fail)
 
       raise
@@ -49,7 +55,7 @@ module Submissions
             DocumentGenerationEvent.where(submitter:).order(:created_at).last
           end
 
-        break last_event if last_event.event_name.in?(%w[complete fail])
+        break submitter.documents.reload if last_event.event_name.in?(%w[complete fail])
 
         raise WaitForCompleteTimeout if total_wait_time > CHECK_COMPLETE_TIMEOUT
       end

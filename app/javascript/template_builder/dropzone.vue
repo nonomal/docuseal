@@ -5,7 +5,8 @@
     @drop.prevent="onDropFiles"
   >
     <label
-      class="w-full relative bg-base-200 hover:bg-base-200/70 rounded-md border border-base-content border-dashed"
+      id="document_dropzone"
+      class="w-full relative hover:bg-base-200/30 rounded-md border border-2 border-base-content/10 border-dashed"
       :for="inputId"
       :class="{ 'opacity-50': isLoading || isProcessing }"
     >
@@ -29,7 +30,7 @@
             {{ message }}
           </div>
           <div class="text-sm">
-            <span class="font-medium">Click to upload</span> or drag and drop files
+            <span class="font-medium">{{ t('click_to_upload') }}</span> {{ t('or_drag_and_drop_files') }}
           </div>
         </div>
       </div>
@@ -61,7 +62,7 @@ export default {
     IconCloudUpload,
     IconInnerShadowTop
   },
-  inject: ['baseFetch'],
+  inject: ['baseFetch', 't'],
   props: {
     templateId: {
       type: [Number, String],
@@ -71,11 +72,6 @@ export default {
       type: String,
       required: false,
       default: 'image/*, application/pdf'
-    },
-    isDirectUpload: {
-      type: Boolean,
-      required: true,
-      default: false
     }
   },
   emits: ['success'],
@@ -91,19 +87,14 @@ export default {
     },
     message () {
       if (this.isLoading) {
-        return 'Uploading...'
+        return this.t('uploading')
       } else if (this.isProcessing) {
-        return 'Processing...'
+        return this.t('processing_')
       } else if (this.acceptFileTypes === 'image/*, application/pdf') {
-        return 'Add PDF documents or images'
+        return this.t('add_pdf_documents_or_images')
       } else {
-        return 'Add documents or images'
+        return this.t('add_documents_or_images')
       }
-    }
-  },
-  mounted () {
-    if (this.isDirectUpload) {
-      import('@rails/activestorage')
     }
   },
   methods: {
@@ -114,7 +105,7 @@ export default {
 
         this.upload()
       } else {
-        alert('Only PDF and images are supported.')
+        alert(this.t('only_pdf_and_images_are_supported'))
       }
     }
   }

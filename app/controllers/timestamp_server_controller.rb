@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
 class TimestampServerController < ApplicationController
+  HASH_ALGORITHM = 'SHA256'
+
   before_action :build_encrypted_config
   authorize_resource :encrypted_config
+
+  TimestampError = Class.new(StandardError)
 
   def create
     return head :not_found if Docuseal.multitenant?
@@ -10,29 +14,33 @@ class TimestampServerController < ApplicationController
     test_timeserver_url(@encrypted_config.value) if @encrypted_config.value.present?
 
     if @encrypted_config.value.present? ? @encrypted_config.save : @encrypted_config.delete
-      redirect_back fallback_location: settings_notifications_path, notice: 'Changes have been saved'
+      redirect_back fallback_location: settings_notifications_path, notice: I18n.t('changes_have_been_saved')
     else
-      redirect_back fallback_location: settings_notifications_path, alert: 'Unable to save'
+      redirect_back fallback_location: settings_notifications_path, alert: I18n.t('unable_to_save')
     end
-  rescue HexaPDF::Error, SocketError, Submissions::TimestampHandler::TimestampError, OpenSSL::Timestamp::TimestampError
-    redirect_back fallback_location: settings_notifications_path, alert: 'Invalid Timeserver'
+  rescue SocketError, TimestampError, OpenSSL::Timestamp::TimestampError
+    redirect_back fallback_location: settings_notifications_path, alert: t('invalid_timeserver')
   end
 
   private
 
   def test_timeserver_url(url)
-    pdf = HexaPDF::Document.new
-    pdf.pages.add
+    req = OpenSSL::Timestamp::Request.new
+    req.algorithm = HASH_ALGORITHM
+    req.message_imprint = OpenSSL::Digest.digest(HASH_ALGORITHM, 'test')
 
-    pkcs = Accounts.load_signing_pkcs(current_account)
+    uri = Addressable::URI.parse(url)
 
-    pdf.sign(StringIO.new,
-             reason: 'Test',
-             certificate: pkcs.certificate,
-             key: pkcs.key,
-             signature_size: 10_000,
-             certificate_chain: pkcs.ca_certs || [],
-             timestamp_handler: Submissions::TimestampHandler.new(tsa_url: url))
+    conn = Faraday.new(uri.origin) do |c|
+      c.basic_auth(uri.user, uri.password) if uri.password.present?
+    end
+
+    response = conn.post(uri.path, req.to_der,
+                         'content-type' => 'application/timestamp-query')
+
+    raise TimestampError if response.status != 200 || response.body.blank?
+
+    response
   end
 
   def load_encrypted_config

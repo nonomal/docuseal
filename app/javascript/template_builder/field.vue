@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group pb-2"
+    class="list-field group mb-2"
   >
     <div
       class="border border-base-300 rounded rounded-tr-none relative group"
@@ -14,15 +14,17 @@
         <div class="flex items-center p-1 space-x-1">
           <FieldType
             v-model="field.type"
-            :editable="editable && !defaultField"
+            :editable="editable && !defaultField && field.type != 'heading'"
             :button-width="20"
+            :menu-classes="'mt-1.5'"
+            :menu-style="{ backgroundColor: dropdownBgColor }"
             @update:model-value="[maybeUpdateOptions(), save()]"
             @click="scrollToFirstArea"
           />
           <Contenteditable
             ref="name"
-            :model-value="field.name || defaultName"
-            :editable="editable && !defaultField"
+            :model-value="(defaultField ? (defaultField.title || field.title || field.name) : field.name) || defaultName"
+            :editable="editable && !defaultField && field.type != 'heading'"
             :icon-inline="true"
             :icon-width="18"
             :icon-stroke-width="1.6"
@@ -47,7 +49,7 @@
               class="label text-xs"
               @click.prevent="field.required = !field.required"
               @mousedown.prevent
-            >Required</label>
+            >{{ t('required') }}</label>
           </template>
         </div>
         <div
@@ -55,8 +57,8 @@
           class="flex items-center space-x-1"
         >
           <button
-            v-if="field && !field.areas.length"
-            title="Draw"
+            v-if="field && !field.areas?.length"
+            :title="t('draw')"
             class="relative cursor-pointer text-transparent group-hover:text-base-content"
             @click="$emit('set-draw', { field })"
           >
@@ -65,19 +67,44 @@
               :stroke-width="1.6"
             />
           </button>
+          <button
+            v-if="field.preferences?.formula"
+            class="relative cursor-pointer text-transparent group-hover:text-base-content"
+            :title="t('formula')"
+            @click="isShowFormulaModal = true"
+          >
+            <IconMathFunction
+              :width="18"
+              :stroke-width="1.6"
+            />
+          </button>
+          <button
+            v-if="field.conditions?.length"
+            class="relative cursor-pointer text-transparent group-hover:text-base-content"
+            :title="t('condition')"
+            @click="isShowConditionsModal = true"
+          >
+            <IconRouteAltLeft
+              :width="18"
+              :stroke-width="1.6"
+            />
+          </button>
           <PaymentSettings
             v-if="field.type === 'payment'"
             :field="field"
+            @click-condition="isShowConditionsModal = true"
+            @click-description="isShowDescriptionModal = true"
+            @click-formula="isShowFormulaModal = true"
           />
           <span
-            v-else
+            v-else-if="field.type !== 'heading'"
             class="dropdown dropdown-end"
             @mouseenter="renderDropdown = true"
             @touchstart="renderDropdown = true"
           >
             <label
               tabindex="0"
-              title="Settings"
+              :title="t('settings')"
               class="cursor-pointer text-transparent group-hover:text-base-content"
             >
               <IconSettings
@@ -88,135 +115,29 @@
             <ul
               v-if="renderDropdown"
               tabindex="0"
-              class="mt-1.5 dropdown-content menu menu-xs p-2 shadow bg-base-100 rounded-box w-52 z-10"
+              class="mt-1.5 dropdown-content menu menu-xs p-2 shadow rounded-box w-52 z-10"
+              :style="{ backgroundColor: dropdownBgColor }"
               draggable="true"
               @dragstart.prevent.stop
               @click="closeDropdown"
             >
-              <div
-                v-if="field.type === 'text' && !defaultField"
-                class="py-1.5 px-1 relative"
-                @click.stop
-              >
-                <input
-                  v-model="field.default_value"
-                  type="text"
-                  placeholder="Default value"
-                  class="input input-bordered input-xs w-full max-w-xs h-7 !outline-0"
-                  @blur="save"
-                >
-                <label
-                  v-if="field.default_value"
-                  :style="{ backgroundColor: backgroundColor }"
-                  class="absolute -top-1 left-2.5 px-1 h-4"
-                  style="font-size: 8px"
-                >
-                  Default value
-                </label>
-              </div>
-              <div
-                v-if="field.type === 'date'"
-                class="py-1.5 px-1 relative"
-                @click.stop
-              >
-                <select
-                  v-model="field.preferences.format"
-                  placeholder="Format"
-                  class="select select-bordered select-xs font-normal w-full max-w-xs !h-7 !outline-0"
-                  @change="save"
-                >
-                  <option
-                    v-for="format in dateFormats"
-                    :key="format"
-                    :value="format"
-                  >
-                    {{ formatDate(new Date(), format) }}
-                  </option>
-                </select>
-                <label
-                  :style="{ backgroundColor: backgroundColor }"
-                  class="absolute -top-1 left-2.5 px-1 h-4"
-                  style="font-size: 8px"
-                >
-                  Format
-                </label>
-              </div>
-              <li
-                v-if="field.type != 'phone'"
-                @click.stop
-              >
-                <label class="cursor-pointer py-1.5">
-                  <input
-                    v-model="field.required"
-                    type="checkbox"
-                    class="toggle toggle-xs"
-                    @update:model-value="save"
-                  >
-                  <span class="label-text">Required</span>
-                </label>
-              </li>
-              <li
-                v-if="field.type === 'text' && !defaultField"
-                @click.stop
-              >
-                <label class="cursor-pointer py-1.5">
-                  <input
-                    v-model="field.readonly"
-                    type="checkbox"
-                    class="toggle toggle-xs"
-                    @update:model-value="save"
-                  >
-                  <span class="label-text">Read-only</span>
-                </label>
-              </li>
-              <hr class="pb-0.5 mt-0.5">
-              <li
-                v-for="(area, index) in field.areas || []"
-                :key="index"
-              >
-                <a
-                  href="#"
-                  class="text-sm py-1 px-2"
-                  @click.prevent="$emit('scroll-to', area)"
-                >
-                  <IconShape
-                    :width="20"
-                    :stroke-width="1.6"
-                  />
-                  Page {{ area.page + 1 }}
-                </a>
-              </li>
-              <li v-if="!field.areas?.length || !['radio', 'multiple'].includes(field.type)">
-                <a
-                  href="#"
-                  class="text-sm py-1 px-2"
-                  @click.prevent="$emit('set-draw', { field })"
-                >
-                  <IconNewSection
-                    :width="20"
-                    :stroke-width="1.6"
-                  />
-                  Draw New Area
-                </a>
-              </li>
-              <li v-if="field.areas?.length === 1 && ['date', 'signature', 'initials', 'text', 'cells'].includes(field.type)">
-                <a
-                  href="#"
-                  class="text-sm py-1 px-2"
-                  @click.prevent="copyToAllPages(field)"
-                >
-                  <IconCopy
-                    :width="20"
-                    :stroke-width="1.6"
-                  />
-                  Copy to All Pages
-                </a>
-              </li>
+              <FieldSettings
+                :field="field"
+                :default-field="defaultField"
+                :editable="editable"
+                :background-color="dropdownBgColor"
+                @click-formula="isShowFormulaModal = true"
+                @click-description="isShowDescriptionModal = true"
+                @click-condition="isShowConditionsModal = true"
+                @set-draw="$emit('set-draw', $event)"
+                @remove-area="removeArea"
+                @scroll-to="$emit('scroll-to', $event)"
+              />
             </ul>
           </span>
           <button
             class="relative text-transparent group-hover:text-base-content pr-1"
-            title="Remove"
+            :title="t('remove')"
             @click="$emit('remove', field)"
           >
             <IconTrashX
@@ -242,19 +163,20 @@
             {{ index + 1 }}.
           </span>
           <div
-            v-if="['radio', 'multiple'].includes(field.type) && (index > 0 || field.areas.find((a) => a.option_uuid) || !field.areas.length) && !field.areas.find((a) => a.option_uuid === option.uuid)"
+            v-if="editable && ['radio', 'multiple'].includes(field.type) && (index > 0 || field.areas.find((a) => a.option_uuid) || !field.areas.length) && !field.areas.find((a) => a.option_uuid === option.uuid)"
             class="items-center flex w-full"
           >
             <input
               v-model="option.value"
               class="w-full input input-primary input-xs text-sm bg-transparent !pr-7 -mr-6"
               type="text"
+              dir="auto"
               required
-              :placeholder="`Option ${index + 1}`"
+              :placeholder="`${t('option')} ${index + 1}`"
               @blur="save"
             >
             <button
-              title="Draw"
+              :title="t('draw')"
               tabindex="-1"
               @click.prevent="$emit('set-draw', { field, option })"
             >
@@ -268,13 +190,16 @@
             v-else
             v-model="option.value"
             class="w-full input input-primary input-xs text-sm bg-transparent"
-            :placeholder="`Option ${index + 1}`"
+            :placeholder="`${t('option')} ${index + 1}`"
             type="text"
+            :readonly="!editable || defaultField"
             required
+            dir="auto"
             @focus="maybeFocusOnOptionArea(option)"
             @blur="save"
           >
           <button
+            v-if="editable && !defaultField"
             class="text-sm w-3.5"
             tabindex="-1"
             @click="removeOption(option)"
@@ -282,15 +207,51 @@
             &times;
           </button>
         </div>
+        <div
+          v-if="field.options && (!editable || defaultField)"
+          class="pb-1"
+        />
         <button
-          v-if="field.options"
+          v-else-if="field.options && editable && !defaultField"
           class="text-center text-sm w-full pb-1"
           @click="addOption"
         >
-          + Add option
+          + {{ t('add_option') }}
         </button>
       </div>
     </div>
+    <Teleport
+      v-if="isShowFormulaModal"
+      :to="modalContainerEl"
+    >
+      <FormulaModal
+        :field="field"
+        :editable="editable && !defaultField"
+        :build-default-name="buildDefaultName"
+        @close="isShowFormulaModal = false"
+      />
+    </Teleport>
+    <Teleport
+      v-if="isShowConditionsModal"
+      :to="modalContainerEl"
+    >
+      <ConditionsModal
+        :item="field"
+        :build-default-name="buildDefaultName"
+        @close="isShowConditionsModal = false"
+      />
+    </Teleport>
+    <Teleport
+      v-if="isShowDescriptionModal"
+      :to="modalContainerEl"
+    >
+      <DescriptionModal
+        :field="field"
+        :editable="editable && !defaultField"
+        :build-default-name="buildDefaultName"
+        @close="isShowDescriptionModal = false"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -298,7 +259,11 @@
 import Contenteditable from './contenteditable'
 import FieldType from './field_type'
 import PaymentSettings from './payment_settings'
-import { IconShape, IconNewSection, IconTrashX, IconCopy, IconSettings } from '@tabler/icons-vue'
+import FieldSettings from './field_settings'
+import FormulaModal from './formula_modal'
+import ConditionsModal from './conditions_modal'
+import DescriptionModal from './description_modal'
+import { IconRouteAltLeft, IconMathFunction, IconNewSection, IconTrashX, IconSettings } from '@tabler/icons-vue'
 import { v4 } from 'uuid'
 
 export default {
@@ -306,14 +271,18 @@ export default {
   components: {
     Contenteditable,
     IconSettings,
-    IconShape,
+    FieldSettings,
     PaymentSettings,
     IconNewSection,
+    FormulaModal,
+    DescriptionModal,
+    ConditionsModal,
+    IconRouteAltLeft,
     IconTrashX,
-    IconCopy,
+    IconMathFunction,
     FieldType
   },
-  inject: ['template', 'save', 'backgroundColor', 'selectedAreaRef'],
+  inject: ['template', 'save', 'backgroundColor', 'selectedAreaRef', 't', 'locale'],
   props: {
     field: {
       type: Object,
@@ -335,41 +304,35 @@ export default {
     return {
       isNameFocus: false,
       showPaymentModal: false,
+      isShowFormulaModal: false,
+      isShowConditionsModal: false,
+      isShowDescriptionModal: false,
       renderDropdown: false
     }
   },
   computed: {
     fieldNames: FieldType.computed.fieldNames,
-    dateFormats () {
-      return [
-        'MM/DD/YYYY',
-        'DD/MM/YYYY',
-        'YYYY-MM-DD',
-        'DD-MM-YYYY',
-        'DD.MM.YYYY',
-        'MMM D, YYYY',
-        'MMMM D, YYYY',
-        'D MMM YYYY',
-        'D MMMM YYYY'
-      ]
+    fieldLabels: FieldType.computed.fieldLabels,
+    dropdownBgColor () {
+      return ['', null, 'transparent'].includes(this.backgroundColor) ? 'white' : this.backgroundColor
+    },
+    schemaAttachmentsIndexes () {
+      return (this.template.schema || []).reduce((acc, item, index) => {
+        acc[item.attachment_uuid] = index
+
+        return acc
+      }, {})
+    },
+    sortedAreas () {
+      return (this.field.areas || []).sort((a, b) => {
+        return this.schemaAttachmentsIndexes[a.attachment_uuid] - this.schemaAttachmentsIndexes[b.attachment_uuid]
+      })
+    },
+    modalContainerEl () {
+      return this.$el.getRootNode().querySelector('#docuseal_modal_container')
     },
     defaultName () {
-      if (this.field.type === 'payment' && this.field.preferences?.price) {
-        const { price, currency } = this.field.preferences || {}
-
-        const formattedPrice = new Intl.NumberFormat([], {
-          style: 'currency',
-          currency
-        }).format(price)
-
-        return `${this.fieldNames[this.field.type]} ${formattedPrice}`
-      } else {
-        const typeIndex = this.template.fields.filter((f) => f.type === this.field.type).indexOf(this.field)
-
-        const suffix = { multiple: 'Select', radio: 'Group' }[this.field.type] || 'Field'
-
-        return `${this.fieldNames[this.field.type]} ${suffix} ${typeIndex + 1}`
-      }
+      return this.buildDefaultName(this.field, this.template.fields)
     },
     areas () {
       return this.field.areas || []
@@ -380,55 +343,34 @@ export default {
 
     if (this.field.type === 'date') {
       this.field.preferences.format ||=
-        (Intl.DateTimeFormat().resolvedOptions().locale.endsWith('-US') ? 'MM/DD/YYYY' : 'DD/MM/YYYY')
+       ({ 'de-DE': 'DD.MM.YYYY' }[this.locale] || ((Intl.DateTimeFormat().resolvedOptions().locale.endsWith('-US') || new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' }).format(new Date()).match(/\s(?:CST|CDT|PST|PDT|EST|EDT)$/)) ? 'MM/DD/YYYY' : 'DD/MM/YYYY'))
     }
   },
   methods: {
-    formatDate (date, format) {
-      const monthFormats = {
-        M: 'numeric',
-        MM: '2-digit',
-        MMM: 'short',
-        MMMM: 'long'
-      }
-
-      const dayFormats = {
-        D: 'numeric',
-        DD: '2-digit'
-      }
-
-      const yearFormats = {
-        YYYY: 'numeric',
-        YY: '2-digit'
-      }
-
-      const parts = new Intl.DateTimeFormat([], {
-        day: dayFormats[format.match(/D+/)],
-        month: monthFormats[format.match(/M+/)],
-        year: yearFormats[format.match(/Y+/)]
-      }).formatToParts(date)
-
-      return format
-        .replace(/D+/, parts.find((p) => p.type === 'day').value)
-        .replace(/M+/, parts.find((p) => p.type === 'month').value)
-        .replace(/Y+/, parts.find((p) => p.type === 'year').value)
-    },
-    copyToAllPages (field) {
-      const areaString = JSON.stringify(field.areas[0])
-
-      this.template.documents.forEach((attachment) => {
-        attachment.preview_images.forEach((page) => {
-          if (!field.areas.find((area) => area.attachment_uuid === attachment.uuid && area.page === parseInt(page.filename))) {
-            field.areas.push({ ...JSON.parse(areaString), page: parseInt(page.filename) })
-          }
-        })
-      })
-
-      this.$nextTick(() => {
-        this.$emit('scroll-to', this.field.areas[this.field.areas.length - 1])
-      })
+    removeArea (area) {
+      this.field.areas.splice(this.field.areas.indexOf(area), 1)
 
       this.save()
+    },
+    buildDefaultName (field, fields) {
+      if (field.type === 'payment' && field.preferences?.price && !field.preferences?.formula) {
+        const { price, currency } = field.preferences || {}
+
+        const formattedPrice = new Intl.NumberFormat([], {
+          style: 'currency',
+          currency
+        }).format(price)
+
+        return `${this.fieldNames[field.type]} ${formattedPrice}`
+      } else {
+        const typeIndex = fields.filter((f) => f.type === field.type).indexOf(field)
+
+        if (field.type === 'heading') {
+          return `${this.fieldNames[field.type]} ${typeIndex + 1}`
+        } else {
+          return `${this.fieldLabels[field.type]} ${typeIndex + 1}`
+        }
+      }
     },
     onNameFocus (e) {
       this.isNameFocus = true
@@ -447,10 +389,10 @@ export default {
       }
     },
     scrollToFirstArea () {
-      return this.field.areas?.[0] && this.$emit('scroll-to', this.field.areas[0])
+      return this.sortedAreas[0] && this.$emit('scroll-to', this.sortedAreas[0])
     },
     closeDropdown () {
-      document.activeElement.blur()
+      this.$el.getRootNode().activeElement.blur()
     },
     addOption () {
       this.field.options.push({ value: '', uuid: v4() })
@@ -465,7 +407,12 @@ export default {
     },
     removeOption (option) {
       this.field.options.splice(this.field.options.indexOf(option), 1)
-      this.field.areas.splice(this.field.areas.findIndex((a) => a.option_uuid === option.uuid), 1)
+
+      const optionIndex = this.field.areas.findIndex((a) => a.option_uuid === option.uuid)
+
+      if (optionIndex !== -1) {
+        this.field.areas.splice(this.field.areas.findIndex((a) => a.option_uuid === option.uuid), 1)
+      }
 
       this.save()
     },
@@ -478,6 +425,10 @@ export default {
 
       if (['radio', 'multiple', 'select'].includes(this.field.type)) {
         this.field.options ||= [{ value: '', uuid: v4() }]
+      }
+
+      if (['heading'].includes(this.field.type)) {
+        this.field.readonly = true
       }
 
       (this.field.areas || []).forEach((area) => {
@@ -499,11 +450,6 @@ export default {
       }
 
       this.isNameFocus = false
-
-      this.save()
-    },
-    removeArea (area) {
-      this.field.areas.splice(this.field.areas.indexOf(area), 1)
 
       this.save()
     }

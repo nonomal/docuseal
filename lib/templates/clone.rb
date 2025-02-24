@@ -4,23 +4,38 @@ module Templates
   module Clone
     module_function
 
-    def call(original_template, author:, application_key: nil, name: nil, folder_name: nil)
-      original_template_account = original_template.account
+    def call(original_template, author:, external_id: nil, name: nil, folder_name: nil)
+      template = original_template.account.templates.new
 
-      template = original_template_account.templates.new
-
-      template.application_key = application_key
+      template.external_id = external_id
       template.author = author
-      template.name = name || "#{original_template.name} (Clone)"
+      template.name = name.presence || "#{original_template.name} (#{I18n.t('clone')})"
 
-      template.assign_attributes(original_template.slice(:folder_id, :schema))
+      if folder_name.present?
+        template.folder = TemplateFolders.find_or_create_by_name(author, folder_name)
+      else
+        template.folder_id = original_template.folder_id
+      end
 
-      template.folder = TemplateFolders.find_or_create_by_name(author, folder_name) if folder_name.present?
+      template.submitters, template.fields, template.schema, template.preferences =
+        update_submitters_and_fields_and_schema(original_template.submitters.deep_dup,
+                                                original_template.fields.deep_dup,
+                                                original_template.schema.deep_dup,
+                                                original_template.preferences.deep_dup)
 
+      if name.present? && template.schema.size == 1 &&
+         original_template.schema.first['name'] == original_template.name &&
+         template.name != "#{original_template.name} (#{I18n.t('clone')})"
+        template.schema.first['name'] = template.name
+      end
+
+      template
+    end
+
+    # rubocop:disable Metrics, Style/CombinableLoops
+    def update_submitters_and_fields_and_schema(cloned_submitters, cloned_fields, cloned_schema, cloned_preferences)
       submitter_uuids_replacements = {}
-
-      cloned_submitters = original_template['submitters'].deep_dup
-      cloned_fields = original_template['fields'].deep_dup
+      field_uuids_replacements = {}
 
       cloned_submitters.each do |submitter|
         new_submitter_uuid = SecureRandom.uuid
@@ -29,14 +44,56 @@ module Templates
         submitter['uuid'] = new_submitter_uuid
       end
 
+      cloned_submitters.each do |submitter|
+        if submitter['optional_invite_by_uuid'].present?
+          submitter['optional_invite_by_uuid'] = submitter_uuids_replacements[submitter['optional_invite_by_uuid']]
+        end
+
+        if submitter['invite_by_uuid'].present?
+          submitter['invite_by_uuid'] = submitter_uuids_replacements[submitter['invite_by_uuid']]
+        end
+
+        if submitter['linked_to_uuid'].present?
+          submitter['linked_to_uuid'] = submitter_uuids_replacements[submitter['linked_to_uuid']]
+        end
+      end
+
+      cloned_preferences['submitters'].to_a.each do |submitter|
+        submitter['uuid'] = submitter_uuids_replacements[submitter['uuid']]
+      end
+
       cloned_fields.each do |field|
-        field['uuid'] = SecureRandom.uuid
+        new_field_uuid = SecureRandom.uuid
+
+        field_uuids_replacements[field['uuid']] = new_field_uuid
+        field['uuid'] = new_field_uuid
+
         field['submitter_uuid'] = submitter_uuids_replacements[field['submitter_uuid']]
       end
 
-      template.assign_attributes(fields: cloned_fields, submitters: cloned_submitters)
+      replace_fields_regexp = nil
 
-      template
+      cloned_fields.each do |field|
+        Array.wrap(field['conditions']).each do |condition|
+          condition['field_uuid'] = field_uuids_replacements[condition['field_uuid']]
+        end
+
+        next if field.dig('preferences', 'formula').blank?
+
+        replace_fields_regexp ||= Regexp.union(field_uuids_replacements.keys)
+
+        field['preferences']['formula'] =
+          field['preferences']['formula'].gsub(replace_fields_regexp, field_uuids_replacements)
+      end
+
+      cloned_schema.each do |field|
+        Array.wrap(field['conditions']).each do |condition|
+          condition['field_uuid'] = field_uuids_replacements[condition['field_uuid']]
+        end
+      end
+
+      [cloned_submitters, cloned_fields, cloned_schema, cloned_preferences]
     end
+    # rubocop:enable Metrics, Style/CombinableLoops
   end
 end

@@ -1,6 +1,7 @@
 <template>
   <div
-    class="relative cursor-crosshair select-none"
+    class="relative select-none"
+    :class="{ 'cursor-crosshair': allowDraw }"
     :style="drawField ? 'touch-action: none' : ''"
   >
     <img
@@ -21,28 +22,31 @@
         :key="i"
         :ref="setAreaRefs"
         :area="item.area"
+        :input-mode="inputMode"
         :field="item.field"
         :editable="editable"
-        :default-field="defaultFields.find((f) => f.name === item.field.name)"
+        :with-field-placeholder="withFieldPlaceholder"
+        :default-field="defaultFieldsIndex[item.field.name]"
+        :default-submitters="defaultSubmitters"
+        :max-page="totalPages - 1"
         @start-resize="resizeDirection = $event"
         @stop-resize="resizeDirection = null"
-        @start-drag="isMove = true"
-        @stop-drag="isMove = false"
         @remove="$emit('remove-area', item.area)"
+        @scroll-to="$emit('scroll-to', $event)"
       />
       <FieldArea
         v-if="newArea"
         :is-draw="true"
-        :field="{ submitter_uuid: selectedSubmitter.uuid, type: drawField?.type || 'text' }"
+        :field="{ submitter_uuid: selectedSubmitter.uuid, type: drawField?.type || defaultFieldType }"
         :area="newArea"
       />
     </div>
     <div
-      v-show="resizeDirection || isMove || isDrag || showMask || (drawField && isMobile)"
+      v-show="resizeDirection || isDrag || showMask || (drawField && isMobile) || fieldsDragFieldRef.value"
       id="mask"
       ref="mask"
       class="top-0 bottom-0 left-0 right-0 absolute"
-      :class="{ 'z-10': !isMobile, 'cursor-grab': isDrag || isMove, 'cursor-nwse-resize': drawField, [resizeDirectionClasses[resizeDirection]]: !!resizeDirectionClasses }"
+      :class="{ 'z-10': !isMobile, 'cursor-grab': isDrag, 'cursor-nwse-resize': drawField, [resizeDirectionClasses[resizeDirection]]: !!resizeDirectionClasses }"
       @pointermove="onPointermove"
       @pointerdown="onStartDraw"
       @dragover.prevent
@@ -60,6 +64,7 @@ export default {
   components: {
     FieldArea
   },
+  inject: ['fieldTypes', 'defaultDrawFieldType', 'fieldsDragFieldRef'],
   props: {
     image: {
       type: Object,
@@ -70,14 +75,43 @@ export default {
       required: false,
       default: () => []
     },
+    inputMode: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
     defaultFields: {
       type: Array,
       required: false,
       default: () => []
     },
+    withFieldPlaceholder: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
+    totalPages: {
+      type: Number,
+      required: true
+    },
+    drawFieldType: {
+      type: String,
+      required: false,
+      default: ''
+    },
+    allowDraw: {
+      type: Boolean,
+      required: false,
+      default: true
+    },
     selectedSubmitter: {
       type: Object,
       required: true
+    },
+    defaultSubmitters: {
+      type: Array,
+      required: false,
+      default: () => []
     },
     drawField: {
       type: Object,
@@ -99,19 +133,38 @@ export default {
       required: true
     }
   },
-  emits: ['draw', 'drop-field', 'remove-area'],
+  emits: ['draw', 'drop-field', 'remove-area', 'scroll-to'],
   data () {
     return {
       areaRefs: [],
       showMask: false,
-      isMove: false,
       resizeDirection: null,
       newArea: null
     }
   },
   computed: {
+    defaultFieldsIndex () {
+      return this.defaultFields.reduce((acc, field) => {
+        acc[field.name] = field
+
+        return acc
+      }, {})
+    },
+    defaultFieldType () {
+      if (this.drawFieldType) {
+        return this.drawFieldType
+      } else if (this.defaultDrawFieldType && this.defaultDrawFieldType !== 'text') {
+        return this.defaultDrawFieldType
+      } else if (this.fieldTypes.length !== 0 && !this.fieldTypes.includes('text')) {
+        return this.fieldTypes[0]
+      } else {
+        return 'text'
+      }
+    },
     isMobile () {
-      return /android|iphone|ipad/i.test(navigator.userAgent)
+      const isMobileSafariIos = 'ontouchstart' in window && navigator.maxTouchPoints > 0 && /AppleWebKit/i.test(navigator.userAgent)
+
+      return isMobileSafariIos || /android|iphone|ipad/i.test(navigator.userAgent)
     },
     resizeDirectionClasses () {
       return {
@@ -141,14 +194,18 @@ export default {
     },
     onDrop (e) {
       this.$emit('drop-field', {
-        x: e.layerX,
-        y: e.layerY,
+        x: e.offsetX,
+        y: e.offsetY,
         maskW: this.$refs.mask.clientWidth,
         maskH: this.$refs.mask.clientHeight,
         page: this.number
       })
     },
     onStartDraw (e) {
+      if (!this.allowDraw) {
+        return
+      }
+
       if (this.isMobile && !this.drawField) {
         return
       }
@@ -161,10 +218,10 @@ export default {
 
       this.$nextTick(() => {
         this.newArea = {
-          initialX: e.layerX / this.$refs.mask.clientWidth,
-          initialY: e.layerY / this.$refs.mask.clientHeight,
-          x: e.layerX / this.$refs.mask.clientWidth,
-          y: e.layerY / this.$refs.mask.clientHeight,
+          initialX: e.offsetX / this.$refs.mask.clientWidth,
+          initialY: e.offsetY / this.$refs.mask.clientHeight,
+          x: e.offsetX / this.$refs.mask.clientWidth,
+          y: e.offsetY / this.$refs.mask.clientHeight,
           w: 0,
           h: 0
         }
@@ -172,22 +229,22 @@ export default {
     },
     onPointermove (e) {
       if (this.newArea) {
-        const dx = e.layerX / this.$refs.mask.clientWidth - this.newArea.initialX
-        const dy = e.layerY / this.$refs.mask.clientHeight - this.newArea.initialY
+        const dx = e.offsetX / this.$refs.mask.clientWidth - this.newArea.initialX
+        const dy = e.offsetY / this.$refs.mask.clientHeight - this.newArea.initialY
 
         if (dx > 0) {
           this.newArea.x = this.newArea.initialX
         } else {
-          this.newArea.x = e.layerX / this.$refs.mask.clientWidth
+          this.newArea.x = e.offsetX / this.$refs.mask.clientWidth
         }
 
         if (dy > 0) {
           this.newArea.y = this.newArea.initialY
         } else {
-          this.newArea.y = e.layerY / this.$refs.mask.clientHeight
+          this.newArea.y = e.offsetY / this.$refs.mask.clientHeight
         }
 
-        if (this.drawField?.type === 'cells') {
+        if ((this.drawField?.type || this.drawFieldType) === 'cells') {
           this.newArea.cell_w = this.newArea.h * (this.$refs.mask.clientHeight / this.$refs.mask.clientWidth)
         }
 

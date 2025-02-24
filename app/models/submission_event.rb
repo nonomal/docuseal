@@ -15,6 +15,7 @@
 #
 # Indexes
 #
+#  index_submission_events_on_created_at     (created_at)
 #  index_submission_events_on_submission_id  (submission_id)
 #  index_submission_events_on_submitter_id   (submitter_id)
 #
@@ -45,8 +46,13 @@ class SubmissionEvent < ApplicationRecord
     click_sms: 'click_sms',
     phone_verified: 'phone_verified',
     start_form: 'start_form',
+    start_verification: 'start_verification',
+    complete_verification: 'complete_verification',
     view_form: 'view_form',
-    complete_form: 'complete_form'
+    invite_party: 'invite_party',
+    complete_form: 'complete_form',
+    decline_form: 'decline_form',
+    api_complete_form: 'api_complete_form'
   }, scope: false
 
   private

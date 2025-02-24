@@ -32,7 +32,7 @@ RSpec.describe 'App Setup' do
 
       expect do
         click_button 'Submit'
-        sleep 2
+        page.driver.wait_for_network_idle
       end.to change(Account, :count).by(1).and change(User, :count).by(1).and change(EncryptedConfig, :count).by(2)
 
       user = User.last
@@ -71,7 +71,7 @@ RSpec.describe 'App Setup' do
       sign_in(user)
       visit setup_index_path
 
-      expect(page).to have_content('Welcome to DocuSeal')
+      expect(page).to have_link('Create', href: new_template_path)
     end
   end
 

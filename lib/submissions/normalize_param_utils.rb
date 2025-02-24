@@ -22,7 +22,8 @@ module Submissions
       default_values = submitter_params[:values] || {}
 
       submitter_params[:fields]&.each do |f|
-        default_values[f[:name]] = f[:default_value] if f[:default_value].present?
+        default_values[f[:name].presence || f[:uuid]] = f[:default_value] if f.key?(:default_value)
+        default_values[f[:name].presence || f[:uuid]] = f[:value] if f.key?(:value)
       end
 
       return submitter_params if default_values.blank?
@@ -47,13 +48,15 @@ module Submissions
 
       submitters.each do |submitter|
         submitter.values.each_value do |value|
-          attachment = attachments_index[value]
+          Array.wrap(value).each do |v|
+            attachment = attachments_index[v]
 
-          next unless attachment
+            next unless attachment
 
-          attachment.record = submitter
+            attachment.record = submitter
 
-          attachment.save!
+            attachment.save!
+          end
         end
       end
     end

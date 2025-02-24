@@ -7,27 +7,32 @@ module Api
     def create
       authorize!(:manage, @template)
 
-      cloned_template = Templates::Clone.call(@template,
-                                              author: current_user,
-                                              name: params[:name],
-                                              application_key: params[:application_key],
-                                              folder_name: params[:folder_name])
+      ActiveRecord::Associations::Preloader.new(
+        records: [@template],
+        associations: [schema_documents: :preview_images_attachments]
+      ).call
+
+      cloned_template = Templates::Clone.call(
+        @template,
+        author: current_user,
+        name: params[:name],
+        external_id: params[:external_id].presence || params[:application_key],
+        folder_name: params[:folder_name]
+      )
 
       cloned_template.source = :api
       cloned_template.save!
 
-      Templates::CloneAttachments.call(template: cloned_template, original_template: @template)
+      schema_documents = Templates::CloneAttachments.call(template: cloned_template,
+                                                          original_template: @template,
+                                                          documents: params[:documents])
 
-      render json: cloned_template.as_json(serialize_params)
-    end
+      WebhookUrls.for_account_id(cloned_template.account_id, 'template.created').each do |webhook_url|
+        SendTemplateCreatedWebhookRequestJob.perform_async('template_id' => cloned_template.id,
+                                                           'webhook_url_id' => webhook_url.id)
+      end
 
-    private
-
-    def serialize_params
-      {
-        include: { author: { only: %i[id email first_name last_name] },
-                   documents: { only: %i[id uuid], methods: %i[url filename] } }
-      }
+      render json: Templates::SerializeForApi.call(cloned_template, schema_documents)
     end
   end
 end

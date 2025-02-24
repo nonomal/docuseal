@@ -2,6 +2,8 @@
 
 require 'active_support/core_ext/integer/time'
 
+Rails.backtrace_cleaner.remove_silencers!
+
 Rails.application.configure do
   config.after_initialize do
     Bullet.enable        = true
@@ -37,7 +39,7 @@ Rails.application.configure do
 
     config.cache_store = :memory_store
     config.public_file_server.headers = {
-      'Cache-Control' => "public, max-age=#{2.days.to_i}"
+      'cache-control' => "public, max-age=#{2.days.to_i}"
     }
   else
     config.action_controller.perform_caching = false
@@ -45,7 +47,7 @@ Rails.application.configure do
     config.cache_store = :null_store
   end
 
-  config.active_job.queue_adapter = :sidekiq if defined?(Sidekiq)
+  config.active_job.queue_adapter = :sidekiq
 
   # Store uploaded files on the local file system (see config/storage.yml for options).
   config.active_storage.service = :disk
@@ -82,7 +84,7 @@ Rails.application.configure do
   ActiveRecord::Encryption.configure(**config.active_record.encryption)
 
   # Raises error for missing translations.
-  # config.i18n.raise_on_missing_translations = true
+  config.i18n.raise_on_missing_translations = true
 
   # Annotate rendered view with file names.
   # config.action_view.annotate_rendered_view_with_filenames = true

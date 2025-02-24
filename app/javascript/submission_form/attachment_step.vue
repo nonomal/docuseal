@@ -41,11 +41,18 @@
         :name="`values[${field.uuid}][]`"
       >
     </template>
+    <div
+      v-if="field.description && !modelValue.length"
+      dir="auto"
+      class="mb-3 px-1"
+    >
+      <MarkdownContent :string="field.description" />
+    </div>
     <FileDropzone
-      :message="`Upload ${field.name || 'Attachments'}${field.required ? '' : ' (optional)'}`"
+      :message="`${t('upload')} ${(field.title || field.name) || t('files')}${field.required ? '' : ` (${t('optional')})`}`"
       :submitter-slug="submitterSlug"
-      :is-direct-upload="isDirectUpload"
       :multiple="true"
+      :dry-run="dryRun"
       @upload="onUpload"
     />
   </div>
@@ -53,15 +60,18 @@
 
 <script>
 import FileDropzone from './dropzone'
+import MarkdownContent from './markdown_content'
 import { IconPaperclip, IconTrashX } from '@tabler/icons-vue'
 
 export default {
   name: 'AttachmentStep',
   components: {
     FileDropzone,
+    MarkdownContent,
     IconPaperclip,
     IconTrashX
   },
+  inject: ['t'],
   props: {
     field: {
       type: Object,
@@ -71,15 +81,15 @@ export default {
       type: String,
       required: true
     },
+    dryRun: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
     attachmentsIndex: {
       type: Object,
       required: false,
       default: () => ({})
-    },
-    isDirectUpload: {
-      type: Boolean,
-      required: true,
-      default: false
     },
     modelValue: {
       type: Array,

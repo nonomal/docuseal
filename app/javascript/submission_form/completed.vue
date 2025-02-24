@@ -1,19 +1,32 @@
 <template>
-  <div class="mx-auto max-w-md flex flex-col">
-    <p class="font-medium text-2xl flex items-center space-x-1.5 mx-auto">
+  <div
+    id="form_completed"
+    class="mx-auto max-w-md flex flex-col"
+    dir="auto"
+  >
+    <div class="font-medium text-2xl flex items-center space-x-1.5 mx-auto">
       <IconCircleCheck
         class="inline text-green-600"
         :width="30"
         :height="30"
       />
       <span>
-        {{ t('form_has_been_completed') }}
+        {{ completedMessage.title || (hasSignatureFields ? (hasMultipleDocuments ? t('documents_have_been_signed') : t('document_has_been_signed')) : t('form_has_been_completed')) }}
       </span>
-    </p>
+    </div>
+    <div
+      v-if="completedMessage.body"
+      class="mt-2"
+    >
+      <MarkdownContent
+        :string="completedMessage.body"
+      />
+    </div>
     <div class="space-y-3 mt-5">
       <a
         v-if="completedButton.url"
-        :href="completedButton.url"
+        :href="sanitizeHref(completedButton.url)"
+        rel="noopener noreferrer nofollow"
         class="white-button flex items-center w-full"
       >
         <span>
@@ -63,7 +76,7 @@
       </a>
       <a
         v-if="isDemo"
-        href="https://docuseal.co/sign_up"
+        href="https://docuseal.com/sign_up"
         class="white-button flex items-center space-x-1 w-full"
       >
         <IconLogin />
@@ -76,9 +89,9 @@
       v-if="attribution"
       class="text-center mt-4"
     >
-      {{ t('signed_with') }}
+      {{ t('powered_by') }}
       <a
-        href="https://www.docuseal.co/start"
+        href="https://www.docuseal.com/start"
         target="_blank"
         class="underline"
       >DocuSeal</a> - {{ t('open_source_documents_software') }}
@@ -88,10 +101,12 @@
 
 <script>
 import { IconCircleCheck, IconBrandGithub, IconMail, IconDownload, IconInnerShadowTop, IconLogin } from '@tabler/icons-vue'
+import MarkdownContent from './markdown_content'
 
 export default {
   name: 'FormCompleted',
   components: {
+    MarkdownContent,
     IconCircleCheck,
     IconInnerShadowTop,
     IconBrandGithub,
@@ -115,6 +130,16 @@ export default {
       required: false,
       default: true
     },
+    hasSignatureFields: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
+    hasMultipleDocuments: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
     withDownloadButton: {
       type: Boolean,
       required: false,
@@ -136,6 +161,11 @@ export default {
       default: false
     },
     completedButton: {
+      type: Object,
+      required: false,
+      default: () => ({})
+    },
+    completedMessage: {
       type: Object,
       required: false,
       default: () => ({})
@@ -162,6 +192,10 @@ export default {
         spread: 140
       })
     }
+
+    if (window.decline_button) {
+      window.decline_button.setAttribute('disabled', 'true')
+    }
   },
   methods: {
     sendCopyToEmail () {
@@ -178,28 +212,74 @@ export default {
     download () {
       this.isDownloading = true
 
-      fetch(this.baseUrl + `/submitters/${this.submitterSlug}/download`).then((response) => response.json()).then((urls) => {
-        const fileRequests = urls.map((url) => {
-          return () => {
-            return fetch(url).then(async (resp) => {
-              const blobUrl = URL.createObjectURL(await resp.blob())
-              const link = document.createElement('a')
+      fetch(this.baseUrl + `/submitters/${this.submitterSlug}/download`).then(async (response) => {
+        if (response.ok) {
+          const urls = await response.json()
+          const isMobileSafariIos = 'ontouchstart' in window && navigator.maxTouchPoints > 0 && /AppleWebKit/i.test(navigator.userAgent)
+          const isSafariIos = isMobileSafariIos || /iPhone|iPad|iPod/i.test(navigator.userAgent)
 
-              link.href = blobUrl
-              link.setAttribute('download', decodeURI(url.split('/').pop()))
-
-              link.click()
-
-              URL.revokeObjectURL(url)
-            })
+          if (isSafariIos && urls.length > 1) {
+            this.downloadSafariIos(urls)
+          } else {
+            this.downloadUrls(urls)
           }
+        } else {
+          alert(this.t('failed_to_download_files'))
+        }
+      })
+    },
+    downloadUrls (urls) {
+      const fileRequests = urls.map((url) => {
+        return () => {
+          return fetch(url).then(async (resp) => {
+            const blobUrl = URL.createObjectURL(await resp.blob())
+            const link = document.createElement('a')
+
+            link.href = blobUrl
+            link.setAttribute('download', decodeURI(url.split('/').pop()))
+
+            link.click()
+
+            URL.revokeObjectURL(blobUrl)
+          })
+        }
+      })
+
+      fileRequests.reduce(
+        (prevPromise, request) => prevPromise.then(() => request()),
+        Promise.resolve()
+      ).finally(() => {
+        this.isDownloading = false
+      })
+    },
+    sanitizeHref (href) {
+      if (href && href.trim().match(/^((?:https?:\/\/)|\/)/)) {
+        return href.replace(/javascript:/g, '')
+      }
+    },
+    downloadSafariIos (urls) {
+      const fileRequests = urls.map((url) => {
+        return fetch(url).then(async (resp) => {
+          const blob = await resp.blob()
+          const blobUrl = URL.createObjectURL(blob.slice(0, blob.size, 'application/octet-stream'))
+          const link = document.createElement('a')
+
+          link.href = blobUrl
+          link.setAttribute('download', decodeURI(url.split('/').pop()))
+
+          return link
         })
+      })
 
-        fileRequests.reduce(
-          (prevPromise, request) => prevPromise.then(() => request()),
-          Promise.resolve()
-        )
+      Promise.all(fileRequests).then((links) => {
+        links.forEach((link, index) => {
+          setTimeout(() => {
+            link.click()
 
+            URL.revokeObjectURL(link.href)
+          }, index * 50)
+        })
+      }).finally(() => {
         this.isDownloading = false
       })
     }

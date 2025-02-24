@@ -1,6 +1,6 @@
 <template>
   <template
-    v-for="step in steps"
+    v-for="(step, stepIndex) in steps"
     :key="step[0].uuid"
   >
     <template
@@ -18,15 +18,20 @@
           <FieldArea
             :ref="setAreaRef"
             v-model="values[field.uuid]"
+            :values="values"
             :field="field"
             :area="area"
-            :submittable="true"
+            :submittable="submittable"
             :field-index="fieldIndex"
+            :scroll-padding="scrollPadding"
+            :submitter="submitter"
+            :with-field-placeholder="withFieldPlaceholder"
+            :with-signature-id="withSignatureId"
             :is-active="currentStep === step"
-            :with-label="withLabel"
+            :with-label="withLabel && !withFieldPlaceholder && step.length < 2"
             :is-value-set="step.some((f) => f.uuid in values)"
             :attachments-index="attachmentsIndex"
-            @click="$emit('focus-step', step)"
+            @click="[$emit('focus-step', stepIndex), maybeScrollOnClick(field, area)]"
           />
         </Teleport>
       </template>
@@ -48,10 +53,34 @@ export default {
       required: false,
       default: () => []
     },
+    withSignatureId: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
+    submittable: {
+      type: Boolean,
+      required: false,
+      default: true
+    },
+    submitter: {
+      type: Object,
+      required: true
+    },
     values: {
       type: Object,
       required: false,
       default: () => ({})
+    },
+    withFieldPlaceholder: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
+    scrollPadding: {
+      type: String,
+      required: false,
+      default: '-80px'
     },
     attachmentsIndex: {
       type: Object,
@@ -62,6 +91,11 @@ export default {
       type: Boolean,
       required: false,
       default: true
+    },
+    scrollEl: {
+      type: Object,
+      required: false,
+      default: null
     },
     currentStep: {
       type: Array,
@@ -75,6 +109,14 @@ export default {
       areaRefs: []
     }
   },
+  computed: {
+    isMobileContainer () {
+      const root = this.$root.$el.parentNode.getRootNode()
+      const container = root.body || root.querySelector('div')
+
+      return container.style.overflow === 'hidden'
+    }
+  },
   beforeUpdate () {
     this.areaRefs = []
   },
@@ -83,22 +125,40 @@ export default {
       return (this.$root.$el?.parentNode?.getRootNode() || document).getElementById(`page-${area.attachment_uuid}-${area.page}`)
     },
     scrollIntoField (field) {
-      this.areaRefs.find((area) => {
-        if (area.field === field) {
-          const root = this.$root.$el.parentNode.getRootNode()
-          const container = root.body || root.querySelector('div')
+      if (field?.areas) {
+        this.scrollIntoArea(field.areas[0])
+      }
+    },
+    maybeScrollOnClick (field, area) {
+      if (['text', 'number', 'cells'].includes(field.type) && this.isMobileContainer) {
+        this.scrollIntoArea(area)
+      }
+    },
+    scrollIntoArea (area) {
+      const areaRef = this.areaRefs.find((a) => a.area === area)
 
-          if (container.style.overflow === 'hidden') {
-            this.scrollInContainer(area.$el)
+      if (areaRef) {
+        if (this.isMobileContainer) {
+          this.scrollInContainer(areaRef.$el)
+        } else {
+          const targetRect = areaRef.$refs.scrollToElem.getBoundingClientRect()
+          const scrollEl = this.scrollEl || window
+
+          let rootRect = {}
+
+          if (this.scrollEl === document.documentElement) {
+            rootRect = this.scrollEl.getBoundingClientRect()
           } else {
-            area.$refs.scrollToElem.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            const root = this.$root.$el?.parentNode?.classList?.contains('ds') ? this.$root.$el : document.body
+
+            rootRect = root.getBoundingClientRect()
           }
 
-          return true
-        } else {
-          return null
+          scrollEl.scrollTo({ top: targetRect.top - rootRect.top, behavior: 'smooth' })
         }
-      })
+
+        return true
+      }
     },
     scrollInContainer (target) {
       const root = this.$root.$el.parentNode.getRootNode()
@@ -107,13 +167,15 @@ export default {
       const formContainer = root.getElementById('form_container')
       const container = root.body || root.querySelector('div')
 
-      const padding = 64
+      const isAndroid = /android/i.test(navigator.userAgent)
+      const padding = isAndroid ? 128 : 64
+      const scrollboxTop = isAndroid ? scrollbox.getBoundingClientRect().top : 0
       const boxRect = scrollbox.children[0].getBoundingClientRect()
       const targetRect = target.getBoundingClientRect()
 
       const targetTopRelativeToBox = targetRect.top - boxRect.top
 
-      scrollbox.scrollTop = targetTopRelativeToBox - container.offsetHeight + formContainer.offsetHeight + target.offsetHeight + padding
+      scrollbox.scrollTo({ top: targetTopRelativeToBox + scrollboxTop - container.offsetHeight + formContainer.offsetHeight + target.offsetHeight + padding, behavior: 'smooth' })
     },
     setAreaRef (el) {
       if (el) {

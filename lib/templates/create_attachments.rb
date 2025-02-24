@@ -5,59 +5,60 @@ module Templates
     PDF_CONTENT_TYPE = 'application/pdf'
     ANNOTATIONS_SIZE_LIMIT = 6.megabytes
     InvalidFileType = Class.new(StandardError)
+    PdfEncrypted = Class.new(StandardError)
 
     module_function
 
-    def call(template, params)
-      find_or_create_blobs(params).map do |blob|
-        document_data = blob.download
-
-        if !blob.image? && blob.content_type != PDF_CONTENT_TYPE
-          blob, document_data = handle_file_types(blob, document_data)
-        end
-
-        document = template.documents.create!(blob:)
-
-        if blob.content_type == PDF_CONTENT_TYPE && blob.metadata['pdf'].nil?
-          annotations =
-            document_data.size > ANNOTATIONS_SIZE_LIMIT ? [] : Templates::BuildAnnotations.call(document_data)
-
-          blob.metadata['pdf'] = { 'annotations' => annotations }
-          blob.metadata['sha256'] = Base64.urlsafe_encode64(Digest::SHA256.digest(document_data))
-        end
-
-        blob.save!
-
-        Templates::ProcessDocument.call(document, document_data)
+    def call(template, params, extract_fields: false)
+      Array.wrap(params[:files].presence || params[:file]).map do |file|
+        handle_file_types(template, file, params, extract_fields:)
       end
     end
 
-    def find_or_create_blobs(params)
-      blobs = params[:blobs]&.map do |attrs|
-        ActiveStorage::Blob.find_signed(attrs[:signed_id])
+    def handle_pdf_or_image(template, file, document_data = nil, params = {}, extract_fields: false)
+      document_data ||= file.read
+
+      if file.content_type == PDF_CONTENT_TYPE
+        document_data = maybe_decrypt_pdf_or_raise(document_data, params)
+
+        annotations =
+          document_data.size < ANNOTATIONS_SIZE_LIMIT ? Templates::BuildAnnotations.call(document_data) : []
       end
 
-      blobs || params[:files].map do |file|
-        data = file.read
+      sha256 = Base64.urlsafe_encode64(Digest::SHA256.digest(document_data))
 
-        if file.content_type == PDF_CONTENT_TYPE
-          annotations = data.size > ANNOTATIONS_SIZE_LIMIT ? [] : Templates::BuildAnnotations.call(data)
-          metadata = { 'identified' => true, 'analyzed' => true,
-                       'sha256' => Base64.urlsafe_encode64(Digest::SHA256.digest(data)),
-                       'pdf' => { 'annotations' => annotations } }
-        end
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: StringIO.new(document_data),
+        filename: file.original_filename,
+        metadata: {
+          identified: file.content_type == PDF_CONTENT_TYPE,
+          analyzed: file.content_type == PDF_CONTENT_TYPE,
+          pdf: { annotations: }.compact_blank, sha256:
+        }.compact_blank,
+        content_type: file.content_type
+      )
 
-        ActiveStorage::Blob.create_and_upload!(
-          io: StringIO.new(data),
-          filename: file.original_filename,
-          metadata:,
-          content_type: file.content_type
-        )
-      end
+      document = template.documents.create!(blob:)
+
+      Templates::ProcessDocument.call(document, document_data, extract_fields:)
     end
 
-    def handle_file_types(_document_data, blob)
-      raise InvalidFileType, blob.content_type
+    def maybe_decrypt_pdf_or_raise(data, params)
+      if data.size < ANNOTATIONS_SIZE_LIMIT && PdfUtils.encrypted?(data)
+        PdfUtils.decrypt(data, params[:password])
+      else
+        data
+      end
+    rescue HexaPDF::EncryptionError
+      raise PdfEncrypted
+    end
+
+    def handle_file_types(template, file, params, extract_fields:)
+      if file.content_type.include?('image') || file.content_type == PDF_CONTENT_TYPE
+        return handle_pdf_or_image(template, file, file.read, params, extract_fields:)
+      end
+
+      raise InvalidFileType, file.content_type
     end
   end
 end

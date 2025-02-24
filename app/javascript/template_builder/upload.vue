@@ -1,6 +1,7 @@
 <template>
   <div>
     <label
+      id="add_document_button"
       :for="inputId"
       class="btn btn-outline w-full"
       :class="{ 'btn-disabled': isLoading || isProcessing }"
@@ -15,13 +16,13 @@
         width="20"
       />
       <span v-if="isLoading">
-        Uploading...
+        {{ t('uploading_') }}
       </span>
       <span v-else-if="isProcessing">
-        Processing...
+        {{ t('processing_') }}
       </span>
       <span v-else>
-        Add Document
+        {{ t('add_document') }}
       </span>
     </label>
     <form
@@ -50,7 +51,7 @@ export default {
     IconUpload,
     IconInnerShadowTop
   },
-  inject: ['baseFetch'],
+  inject: ['baseFetch', 't'],
   props: {
     templateId: {
       type: [Number, String],
@@ -60,11 +61,6 @@ export default {
       type: String,
       required: false,
       default: 'image/*, application/pdf'
-    },
-    isDirectUpload: {
-      type: Boolean,
-      required: true,
-      default: false
     }
   },
   emits: ['success'],
@@ -79,67 +75,43 @@ export default {
       return 'el' + Math.random().toString(32).split('.')[1]
     }
   },
-  mounted () {
-    if (this.isDirectUpload) {
-      import('@rails/activestorage')
-    }
-  },
   methods: {
     async upload () {
       this.isLoading = true
 
-      if (this.isDirectUpload) {
-        const { DirectUpload } = await import('@rails/activestorage')
+      this.baseFetch(`/templates/${this.templateId}/documents`, {
+        method: 'POST',
+        body: new FormData(this.$refs.form)
+      }).then((resp) => {
+        if (resp.ok) {
+          resp.json().then((data) => {
+            this.$emit('success', data)
+            this.$refs.input.value = ''
+          })
+        } else if (resp.status === 422) {
+          resp.json().then((data) => {
+            if (data.status === 'pdf_encrypted') {
+              const formData = new FormData(this.$refs.form)
 
-        const blobs = await Promise.all(
-          Array.from(this.$refs.input.files).map(async (file) => {
-            const upload = new DirectUpload(
-              file,
-              '/direct_uploads',
-              this.$refs.input
-            )
+              formData.append('password', prompt(this.t('enter_pdf_password')))
 
-            return new Promise((resolve, reject) => {
-              upload.create((error, blob) => {
-                if (error) {
-                  console.error(error)
-
-                  return reject(error)
+              this.baseFetch(`/templates/${this.templateId}/documents`, {
+                method: 'POST',
+                body: formData
+              }).then(async (resp) => {
+                if (resp.ok) {
+                  this.$emit('success', await resp.json())
+                  this.$refs.input.value = ''
                 } else {
-                  return resolve(blob)
+                  alert(this.t('wrong_password'))
                 }
               })
-            }).catch((error) => {
-              console.error(error)
-            })
+            }
           })
-        ).finally(() => {
-          this.isLoading = false
-        })
-
-        this.isProcessing = true
-
-        this.baseFetch(`/api/templates/${this.templateId}/documents`, {
-          method: 'POST',
-          body: JSON.stringify({ blobs }),
-          headers: { 'Content-Type': 'application/json' }
-        }).then(resp => resp.json()).then((data) => {
-          this.$emit('success', data)
-          this.$refs.input.value = ''
-        }).finally(() => {
-          this.isProcessing = false
-        })
-      } else {
-        this.baseFetch(`/api/templates/${this.templateId}/documents`, {
-          method: 'POST',
-          body: new FormData(this.$refs.form)
-        }).then(resp => resp.json()).then((data) => {
-          this.$emit('success', data)
-          this.$refs.input.value = ''
-        }).finally(() => {
-          this.isLoading = false
-        })
-      }
+        }
+      }).finally(() => {
+        this.isLoading = false
+      })
     }
   }
 }

@@ -13,9 +13,9 @@ class NotificationsSettingsController < ApplicationController
 
   def create
     if @account_config.value.present? ? @account_config.save : @account_config.delete
-      redirect_back fallback_location: settings_notifications_path, notice: 'Changes have been saved'
+      redirect_back fallback_location: settings_notifications_path, notice: I18n.t('changes_have_been_saved')
     else
-      redirect_back fallback_location: settings_notifications_path, alert: 'Unable to save'
+      redirect_back fallback_location: settings_notifications_path, alert: I18n.t('unable_to_save')
     end
   end
 
@@ -35,12 +35,12 @@ class NotificationsSettingsController < ApplicationController
 
   def load_reminder_config
     @reminder_config =
-      AccountConfig.find_or_initialize_by(account: current_account, key: AccountConfig::SUBMITTER_REMAILERS)
+      AccountConfig.find_or_initialize_by(account: current_account, key: AccountConfig::SUBMITTER_REMINDERS)
   end
 
   def email_config_params
     params.require(:account_config).permit!.tap do |attrs|
-      attrs[:key] = nil unless attrs[:key].in?([AccountConfig::BCC_EMAILS, AccountConfig::SUBMITTER_REMAILERS])
+      attrs[:key] = nil unless attrs[:key].in?([AccountConfig::BCC_EMAILS, AccountConfig::SUBMITTER_REMINDERS])
     end
   end
 end

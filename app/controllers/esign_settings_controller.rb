@@ -11,6 +11,8 @@ class EsignSettingsController < ApplicationController
     end
   end
 
+  prepend_before_action :maybe_redirect_com, only: %i[show]
+
   before_action :load_encrypted_config
   authorize_resource :encrypted_config, parent: false, only: %i[new create]
   authorize_resource :encrypted_config, only: %i[update destroy show]
@@ -21,9 +23,9 @@ class EsignSettingsController < ApplicationController
     default_pkcs = GenerateCertificate.load_pkcs(cert_data) if cert_data['cert'].present?
 
     custom_pkcs_list = (cert_data['custom'] || []).map do |e|
-      { 'pkcs' => OpenSSL::PKCS12.new(Base64.urlsafe_decode64(e['data']), e['password'].to_s),
-        'name' => e['name'],
-        'status' => e['status'] }
+      pkcs = e['data'].present? ? OpenSSL::PKCS12.new(Base64.urlsafe_decode64(e['data']), e['password'].to_s) : nil
+
+      { 'pkcs' => pkcs, 'name' => e['name'], 'status' => e['status'] }
     end
 
     @pkcs_list = [
@@ -48,7 +50,7 @@ class EsignSettingsController < ApplicationController
     if (@encrypted_config.value && @encrypted_config.value['custom']&.any? { |e| e['name'] == @cert_record.name }) ||
        @cert_record.name == DEFAULT_CERT_NAME
 
-      @cert_record.errors.add(:name, 'already exists')
+      @cert_record.errors.add(:name, I18n.t('already_exists'))
 
       return render turbo_stream: turbo_stream.replace(:modal, template: 'esign_settings/new'),
                     status: :unprocessable_entity
@@ -56,22 +58,30 @@ class EsignSettingsController < ApplicationController
 
     save_new_cert!(@encrypted_config, @cert_record)
 
-    redirect_to settings_esign_path, notice: 'Certificate has been successfully added!'
-  rescue OpenSSL::PKCS12::PKCS12Error
-    @cert_record.errors.add(:password, "is invalid. Make sure you're uploading a valid .p12 file")
+    redirect_to settings_esign_path, notice: I18n.t('certificate_has_been_successfully_added')
+  rescue OpenSSL::PKCS12::PKCS12Error => e
+    Rollbar.error(e) if defined?(Rollbar)
+
+    @cert_record.errors.add(:password, e.message)
 
     render turbo_stream: turbo_stream.replace(:modal, template: 'esign_settings/new'), status: :unprocessable_entity
   end
 
   def update
-    @encrypted_config.value['custom'].each { |e| e['status'] = 'validate' }
+    @encrypted_config.value['custom'].to_a.each { |e| e['status'] = 'validate' }
 
-    custom_cert_data = @encrypted_config.value['custom'].find { |e| e['name'] == params[:name] }
-    custom_cert_data['status'] = 'default' if custom_cert_data
+    custom_cert_data = @encrypted_config.value['custom'].to_a.find { |e| e['name'] == params[:name] }
+
+    if custom_cert_data
+      custom_cert_data['status'] = 'default'
+    elsif params[:name] == Docuseal::AATL_CERT_NAME
+      @encrypted_config.value['custom'] ||= []
+      @encrypted_config.value['custom'] << { 'name' => params[:name], 'status' => 'default' }
+    end
 
     @encrypted_config.save!
 
-    redirect_to settings_esign_path, notice: 'Default certificate has been selected'
+    redirect_to settings_esign_path, notice: I18n.t('default_certificate_has_been_selected')
   end
 
   def destroy
@@ -79,7 +89,7 @@ class EsignSettingsController < ApplicationController
 
     @encrypted_config.save!
 
-    redirect_to settings_esign_path, notice: 'Certificate has been removed'
+    redirect_to settings_esign_path, notice: I18n.t('certificate_has_been_removed')
   end
 
   private

@@ -1,14 +1,26 @@
 <template>
-  <div>
-    <div class="flex justify-between items-center w-full mb-2">
+  <div dir="auto">
+    <div
+      class="flex justify-between items-end w-full mb-3.5 md:mb-4"
+      :class="{ 'mb-2': !field.description }"
+    >
       <label
-        class="label text-2xl"
-      >{{ field.name || t('initials') }}</label>
-      <div class="space-x-2 flex">
+        v-if="showFieldNames"
+        class="label text-xl sm:text-2xl py-0"
+      >
+        <MarkdownContent
+          v-if="field.title"
+          :string="field.title"
+        />
+        <template v-else>
+          {{ field.name || t('initials') }}
+        </template>
+      </label>
+      <div class="space-x-2 flex flex-none">
         <span
           v-if="isDrawInitials"
           class="tooltip"
-          :data-tip="t('type_initials')"
+          :data-tip="t('type_initial')"
         >
           <a
             id="type_text_button"
@@ -24,7 +36,7 @@
         </span>
         <span
           v-else
-          class="tooltip"
+          class="tooltip ml-2"
           :data-tip="t('draw_initials')"
         >
           <a
@@ -38,6 +50,26 @@
               {{ t('draw') }}
             </span>
           </a>
+        </span>
+        <span
+          class="tooltip"
+          :data-tip="t('click_to_upload')"
+        >
+          <label
+            class="btn btn-outline btn-sm font-medium inline-flex flex-nowrap"
+          >
+            <IconUpload :width="16" />
+            <input
+              :key="uploadImageInputKey"
+              type="file"
+              hidden
+              accept="image/*"
+              @change="drawImage"
+            >
+            <span class="hidden sm:inline">
+              {{ t('upload') }}
+            </span>
+          </label>
         </span>
         <a
           v-if="modelValue || computedPreviousValue"
@@ -58,7 +90,7 @@
           {{ t('clear') }}
         </a>
         <a
-          title="Minimize"
+          :title="t('minimize')"
           href="#"
           class="py-1.5 inline md:hidden"
           @click.prevent="$emit('minimize')"
@@ -70,6 +102,14 @@
         </a>
       </div>
     </div>
+    <div
+      v-if="field.description"
+      dir="auto"
+      class="mb-3 px-1"
+    >
+      <MarkdownContent :string="field.description" />
+    </div>
+    <AppearsOn :field="field" />
     <input
       :value="modelValue || computedPreviousValue"
       type="hidden"
@@ -78,12 +118,12 @@
     <img
       v-if="modelValue || computedPreviousValue"
       :src="attachmentsIndex[modelValue || computedPreviousValue].url"
-      class="mx-auto bg-white border border-base-300 rounded max-h-72"
+      class="mx-auto bg-white border border-base-300 rounded max-h-44"
     >
     <canvas
       v-show="!modelValue && !computedPreviousValue"
       ref="canvas"
-      class="bg-white border border-base-300 rounded-2xl"
+      class="bg-white border border-base-300 rounded-2xl w-full"
     />
     <input
       v-if="!isDrawInitials && !modelValue && !computedPreviousValue"
@@ -101,15 +141,23 @@
 
 <script>
 import { cropCanvasAndExportToPNG } from './crop_canvas'
-import { IconReload, IconTextSize, IconSignature, IconArrowsDiagonalMinimize2 } from '@tabler/icons-vue'
+import { IconReload, IconTextSize, IconUpload, IconSignature, IconArrowsDiagonalMinimize2 } from '@tabler/icons-vue'
 import SignaturePad from 'signature_pad'
+import AppearsOn from './appears_on'
+import MarkdownContent from './markdown_content'
+import SignatureStep from './signature_step'
+
+const scale = 3
 
 export default {
   name: 'InitialsStep',
   components: {
+    IconUpload,
+    AppearsOn,
     IconReload,
     IconTextSize,
     IconSignature,
+    MarkdownContent,
     IconArrowsDiagonalMinimize2
   },
   inject: ['baseUrl', 't'],
@@ -118,14 +166,19 @@ export default {
       type: Object,
       required: true
     },
+    dryRun: {
+      type: Boolean,
+      required: false,
+      default: false
+    },
     submitterSlug: {
       type: String,
       required: true
     },
-    isDirectUpload: {
+    showFieldNames: {
       type: Boolean,
-      required: true,
-      default: false
+      required: false,
+      default: true
     },
     attachmentsIndex: {
       type: Object,
@@ -148,7 +201,8 @@ export default {
     return {
       isInitialsStarted: !!this.previousValue,
       isUsePreviousValue: true,
-      isDrawInitials: false
+      isDrawInitials: false,
+      uploadImageInputKey: Math.random().toString()
     }
   },
   computed: {
@@ -163,28 +217,55 @@ export default {
   async mounted () {
     this.$nextTick(() => {
       if (this.$refs.canvas) {
-        this.$refs.canvas.width = this.$refs.canvas.parentNode.clientWidth
-        this.$refs.canvas.height = this.$refs.canvas.parentNode.clientWidth / 5
+        this.$refs.canvas.width = this.$refs.canvas.parentNode.clientWidth * scale
+        this.$refs.canvas.height = (this.$refs.canvas.parentNode.clientWidth / 4.5) * scale
+
+        this.$refs.canvas.getContext('2d').scale(scale, scale)
       }
-
-      this.$refs.textInput?.focus()
     })
-
-    if (this.isDirectUpload) {
-      import('@rails/activestorage')
-    }
 
     if (this.$refs.canvas) {
       this.pad = new SignaturePad(this.$refs.canvas)
+
+      if (this.field.preferences?.color) {
+        this.pad.penColor = this.field.preferences.color
+      }
 
       this.pad.addEventListener('beginStroke', () => {
         this.isInitialsStarted = true
 
         this.$emit('start')
       })
+
+      this.intersectionObserver = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            this.$refs.canvas.width = this.$refs.canvas.parentNode.clientWidth * scale
+            this.$refs.canvas.height = (this.$refs.canvas.parentNode.clientWidth / 4.5) * scale
+
+            this.$refs.canvas.getContext('2d').scale(scale, scale)
+
+            this.intersectionObserver?.disconnect()
+          }
+        })
+      })
+
+      this.intersectionObserver.observe(this.$refs.canvas)
     }
   },
+  beforeUnmount () {
+    this.intersectionObserver?.disconnect()
+  },
   methods: {
+    drawOnCanvas: SignatureStep.methods.drawOnCanvas,
+    drawImage (event) {
+      this.remove()
+      this.isInitialsStarted = true
+
+      this.drawOnCanvas(event.target.files[0], this.$refs.canvas)
+
+      this.uploadImageInputKey = Math.random().toString()
+    },
     remove () {
       this.$emit('update:model-value', '')
 
@@ -201,21 +282,36 @@ export default {
       }
     },
     updateWrittenInitials (e) {
-      this.isInitialsStarted = true
+      this.isInitialsStarted = !!e.target.value
 
       const canvas = this.$refs.canvas
       const context = canvas.getContext('2d')
 
       const fontFamily = 'Arial'
-      const fontSize = '44px'
+      const initialFontSize = 50
       const fontStyle = 'italic'
       const fontWeight = ''
 
-      context.font = fontStyle + ' ' + fontWeight + ' ' + fontSize + ' ' + fontFamily
-      context.textAlign = 'center'
+      const setFontSize = (size) => {
+        context.font = `${fontStyle} ${fontWeight} ${size}px ${fontFamily}`
+      }
 
-      context.clearRect(0, 0, canvas.width, canvas.height)
-      context.fillText(e.target.value, canvas.width / 2, canvas.height / 2 + 11)
+      const adjustFontSizeToFit = (text, maxWidth, initialSize) => {
+        let size = initialSize
+
+        setFontSize(size)
+
+        while (context.measureText(text).width > maxWidth && size > 1) {
+          size -= 1
+          setFontSize(size)
+        }
+      }
+
+      adjustFontSizeToFit(e.target.value, canvas.width / scale, initialFontSize)
+
+      context.textAlign = 'center'
+      context.clearRect(0, 0, canvas.width / scale, canvas.height / scale)
+      context.fillText(e.target.value, canvas.width / 2 / scale, canvas.height / 2 / scale + 11)
     },
     toggleTextInput () {
       this.remove()
@@ -243,28 +339,19 @@ export default {
         cropCanvasAndExportToPNG(this.$refs.canvas).then(async (blob) => {
           const file = new File([blob], 'initials.png', { type: 'image/png' })
 
-          if (this.isDirectUpload) {
-            const { DirectUpload } = await import('@rails/activestorage')
+          if (this.dryRun) {
+            const reader = new FileReader()
 
-            new DirectUpload(
-              file,
-              '/direct_uploads'
-            ).create((_error, data) => {
-              fetch(this.baseUrl + '/api/attachments', {
-                method: 'POST',
-                body: JSON.stringify({
-                  submitter_slug: this.submitterSlug,
-                  blob_signed_id: data.signed_id,
-                  name: 'attachments'
-                }),
-                headers: { 'Content-Type': 'application/json' }
-              }).then((resp) => resp.json()).then((attachment) => {
-                this.$emit('update:model-value', attachment.uuid)
-                this.$emit('attached', attachment)
+            reader.readAsDataURL(file)
 
-                return resolve(attachment)
-              })
-            })
+            reader.onloadend = () => {
+              const attachment = { url: reader.result, uuid: Math.random().toString() }
+
+              this.$emit('attached', attachment)
+              this.$emit('update:model-value', attachment.uuid)
+
+              resolve(attachment)
+            }
           } else {
             const formData = new FormData()
 

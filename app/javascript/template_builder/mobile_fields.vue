@@ -1,6 +1,6 @@
 <template>
   <span
-    class="dropdown dropdown-top dropdown-end fixed bottom-4 right-4 z-10 md:hidden"
+    class="dropdown dropdown-top dropdown-end absolute bottom-4 right-4 z-10"
   >
     <label
       class="btn btn-neutral text-white btn-circle btn-lg group"
@@ -12,9 +12,10 @@
         height="28"
       />
       <IconX
-        class="hidden group-focus:inline"
-        width="28"
-        height="28"
+        class="hidden group-focus:inline p-3"
+        width="64"
+        height="50"
+        @click="closeDropdown"
       />
     </label>
     <ul
@@ -38,17 +39,24 @@
                 :stroke-width="1.6"
                 :width="20"
               />
-              {{ field.name }}
+              {{ field.title || field.name }}
+              <span
+                v-if="defaultRequiredFields.includes(field)"
+                :data-tip="t('required')"
+                class="text-red-400 text-2xl tooltip tooltip-left h-6"
+              >
+                *
+              </span>
             </a>
           </li>
         </template>
       </template>
       <template v-else>
         <template
-          v-for="(icon, type) in fieldIcons"
+          v-for="(icon, type) in fieldIconsSorted"
           :key="type"
         >
-          <li v-if="withPhone || withPayment || !['phone', 'payment'].includes(type)">
+          <li v-if="(fieldTypes.length === 0 || fieldTypes.includes(type)) && (withPhone || type != 'phone') && (withPayment || type != 'payment') && (withVerification || type != 'verification')">
             <a
               href="#"
               class="text-sm py-1 px-2"
@@ -78,7 +86,7 @@ export default {
     IconPlus,
     IconX
   },
-  inject: ['withPhone', 'withPayment', 'backgroundColor'],
+  inject: ['withPhone', 'withPayment', 'withVerification', 'backgroundColor', 't'],
   props: {
     modelValue: {
       type: String,
@@ -93,6 +101,16 @@ export default {
     selectedSubmitter: {
       type: Object,
       required: true
+    },
+    fieldTypes: {
+      type: Array,
+      required: false,
+      default: () => []
+    },
+    defaultRequiredFields: {
+      type: Array,
+      required: false,
+      default: () => []
     },
     defaultFields: {
       type: Array,
